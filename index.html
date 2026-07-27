@@ -2,29 +2,978 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>SEV Campo</title>
-
-<!-- ===== PWA: manifest y tema ===== -->
-<link rel="manifest" href="manifest.json">
+<link rel="manifest" href="./manifest.json">
 <meta name="theme-color" content="#12181B">
-
-<!-- ===== iOS / Safari: soporte "Agregar a pantalla de inicio" ===== -->
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="SEV Campo">
-<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="apple-touch-icon" href="./icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg-base:#12181B;
+    --bg-panel:#1A2226;
+    --bg-panel-2:#212B30;
+    --line:#2A363C;
+    --line-soft:#1F2A2F;
+    --text-primary:#E9EEEF;
+    --text-secondary:#8FA0A6;
+    --text-dim:#5C6A6F;
+    --green:#3ED991;
+    --green-dim:#1F5C41;
+    --amber:#FFB238;
+    --amber-dim:#5C3F14;
+    --orange:#FF6A45;
+    --blue:#5AA9E6;
+    --radius:10px;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;}
+  body{
+    margin:0;
+    background:var(--bg-base);
+    color:var(--text-primary);
+    font-family:'Space Grotesk',sans-serif;
+    overflow:hidden;
+    user-select:none;
+  }
+  .mono{ font-family:'JetBrains Mono', monospace; }
+  #app{ position:relative; width:100%; height:100vh; max-width:480px; margin:0 auto; background:var(--bg-base); display:flex; flex-direction:column; }
 
-<!-- ===== Íconos generales / favicons ===== -->
-<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
-<link rel="icon" type="image/png" sizes="16x16" href="icons/favicon-16.png">
+  /* ---------- HOME ---------- */
+  .screen{ position:absolute; inset:0; display:flex; flex-direction:column; }
+  .home{ justify-content:center; align-items:center; padding:32px; gap:0; }
+  .home-brand{ text-align:center; margin-bottom:56px; }
+  .home-brand .mark{ font-family:'JetBrains Mono',monospace; font-size:13px; letter-spacing:4px; color:var(--green); font-weight:600; }
+  .home-brand h1{ font-size:34px; margin:10px 0 6px; font-weight:700; letter-spacing:-0.5px; }
+  .home-brand p{ color:var(--text-secondary); font-size:14px; margin:0; }
+  .home-actions{ width:100%; display:flex; flex-direction:column; gap:14px; }
+  .btn-major{
+    width:100%; padding:22px 20px; border-radius:var(--radius); border:1px solid var(--line);
+    background:var(--bg-panel); color:var(--text-primary); font-family:inherit; font-size:17px; font-weight:600;
+    display:flex; align-items:center; justify-content:space-between; cursor:pointer; text-align:left;
+  }
+  .btn-major small{ display:block; color:var(--text-secondary); font-weight:400; font-size:12.5px; margin-top:4px; font-family:'JetBrains Mono',monospace;}
+  .btn-major.primary{ background:linear-gradient(135deg,#1F5C41,#173E2E); border-color:var(--green-dim); }
+  .btn-major .chev{ color:var(--text-dim); font-size:20px; }
+  .home-footer{ position:absolute; bottom:22px; font-size:11px; color:var(--text-dim); font-family:'JetBrains Mono',monospace; letter-spacing:1px;}
 
-<!-- ===== Estilos (sin dependencias externas / Google Fonts) ===== -->
-<link rel="stylesheet" href="styles.css">
+  /* ---------- LIST ---------- */
+  .topbar{ height:56px; min-height:56px; display:flex; align-items:center; gap:10px; padding:0 14px; border-bottom:1px solid var(--line); background:var(--bg-panel);}
+  .icon-btn{ width:38px; height:38px; border-radius:8px; border:1px solid var(--line); background:var(--bg-panel-2); color:var(--text-primary); display:flex; align-items:center; justify-content:center; cursor:pointer; font-size:17px; flex-shrink:0;}
+  .topbar-title{ flex:1; font-weight:600; font-size:15px; }
+  .topbar-title small{ display:block; font-weight:400; font-size:11px; color:var(--text-secondary); font-family:'JetBrains Mono',monospace; margin-top:1px;}
+  .list-wrap{ flex:1; overflow-y:auto; padding:14px; }
+  .sev-card{ background:var(--bg-panel); border:1px solid var(--line); border-radius:var(--radius); padding:14px 16px; margin-bottom:10px; display:flex; align-items:center; gap:12px; cursor:pointer;}
+  .sev-card .dot{ width:8px; height:8px; border-radius:50%; background:var(--amber); flex-shrink:0;}
+  .sev-card.done .dot{ background:var(--green); }
+  .sev-card-body{ flex:1; }
+  .sev-card-body .name{ font-weight:600; font-size:15px; }
+  .sev-card-body .meta{ font-size:11.5px; color:var(--text-secondary); font-family:'JetBrains Mono',monospace; margin-top:3px;}
+  .sev-card .pct{ font-family:'JetBrains Mono',monospace; font-size:13px; color:var(--text-secondary);}
+  .check-overlay{ width:20px;height:20px;border-radius:5px;border:1px solid var(--line); display:flex;align-items:center;justify-content:center; flex-shrink:0;}
+  .check-overlay.on{ background:var(--blue); border-color:var(--blue);}
+  .empty-hint{ text-align:center; color:var(--text-dim); font-size:13px; margin-top:60px; font-family:'JetBrains Mono',monospace; line-height:1.6;}
+  .list-footer{ padding:14px; border-top:1px solid var(--line); }
+  .btn-block{ width:100%; padding:14px; border-radius:var(--radius); border:1px solid var(--line); background:var(--bg-panel-2); color:var(--text-primary); font-family:inherit; font-weight:600; font-size:14px; cursor:pointer;}
+  .btn-block.accent{ background:var(--blue); border-color:var(--blue); color:#0B1416; }
+
+  /* ---------- NEW SEV ---------- */
+  .new-sev-body{ flex:1; padding:20px; overflow-y:auto; }
+  .field{ margin-bottom:20px; }
+  .field label{ display:block; font-size:11.5px; text-transform:uppercase; letter-spacing:1px; color:var(--text-secondary); margin-bottom:8px; font-family:'JetBrains Mono',monospace;}
+  .field input[type=text]{ width:100%; padding:14px; border-radius:var(--radius); border:1px solid var(--line); background:var(--bg-panel); color:var(--text-primary); font-family:'JetBrains Mono',monospace; font-size:16px;}
+  .gps-box{ border:1px solid var(--line); border-radius:var(--radius); background:var(--bg-panel); padding:16px; }
+  .gps-row{ display:flex; align-items:center; gap:10px; margin-bottom:12px;}
+  .gps-icon{ width:34px; height:34px; border-radius:50%; background:var(--green-dim); color:var(--green); display:flex; align-items:center; justify-content:center; flex-shrink:0; font-size:16px;}
+  .gps-icon.pending{ background:var(--amber-dim); color:var(--amber); }
+  .gps-coords{ font-family:'JetBrains Mono',monospace; font-size:15px; font-weight:600; }
+  .gps-precision{ font-size:11px; color:var(--text-secondary); font-family:'JetBrains Mono',monospace; margin-top:2px;}
+  .btn-ghost{ width:100%; padding:11px; border-radius:8px; border:1px solid var(--line); background:transparent; color:var(--text-primary); font-family:inherit; font-size:13.5px; font-weight:600; cursor:pointer;}
+  .new-sev-footer{ padding:16px 20px; border-top:1px solid var(--line);}
+
+  /* ---------- CARGA (main) ---------- */
+  .carga-topbar{ justify-content:space-between; }
+  .carga-topbar .gps-mini{ font-family:'JetBrains Mono',monospace; font-size:10.5px; color:var(--text-secondary); display:flex; align-items:center; gap:5px;}
+  .carga-topbar .gps-mini .d{ width:6px;height:6px;border-radius:50%; background:var(--green);}
+
+  .chart-zone{ flex:1 1 auto; min-height:0; position:relative; background:radial-gradient(circle at 30% 0%, #182124 0%, var(--bg-base) 70%); }
+  .chart-legend{ position:absolute; top:8px; left:12px; display:flex; gap:12px; font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--text-secondary); z-index:2;}
+  .chart-legend span{ display:flex; align-items:center; gap:5px;}
+  .chart-legend i{ width:9px;height:2px; display:inline-block;}
+
+  .panel{ flex-shrink:0; background:var(--bg-panel); border-top:1px solid var(--line); padding:14px 16px 16px; }
+  .step-row{ display:flex; justify-content:space-between; align-items:baseline; margin-bottom:10px; }
+  .step-progress{ font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--text-dim); letter-spacing:0.5px;}
+  .step-vals{ display:flex; gap:22px; }
+  .step-val{ text-align:left; }
+  .step-val .lab{ font-size:10px; color:var(--text-secondary); letter-spacing:1px; font-family:'JetBrains Mono',monospace; }
+  .step-val .num{ font-size:22px; font-weight:700; font-family:'JetBrains Mono',monospace; line-height:1.1;}
+  .step-val .num.mn{ color:var(--blue); }
+
+  .readout{ background:var(--bg-panel-2); border:1px solid var(--line); border-radius:var(--radius); padding:12px 12px 12px 16px; display:flex; align-items:center; gap:10px; }
+  .readout.manual{ border-color:var(--orange); }
+  .readout-main{ flex:1; }
+  .readout-main label{ display:block; font-size:10px; letter-spacing:1px; color:var(--text-secondary); font-family:'JetBrains Mono',monospace; margin-bottom:4px;}
+  .readout input{ width:100%; background:transparent; border:none; outline:none; color:var(--text-primary); font-family:'JetBrains Mono',monospace; font-size:26px; font-weight:600; padding:0;}
+  .readout input::placeholder{ color:var(--text-dim); }
+  .unit-suffix{ color:var(--text-secondary); font-size:14px; font-family:'JetBrains Mono',monospace;}
+  .manual-fields{ display:flex; gap:10px; flex:1;}
+  .manual-fields .mf{ flex:1; }
+  .manual-fields label{ display:block; font-size:9.5px; letter-spacing:1px; color:var(--text-secondary); font-family:'JetBrains Mono',monospace; margin-bottom:4px;}
+  .manual-fields input{ width:100%; background:transparent; border:none; border-bottom:1px solid var(--line); outline:none; color:var(--text-primary); font-family:'JetBrains Mono',monospace; font-size:18px; font-weight:600; padding:2px 0;}
+  .manual-computed{ font-size:11px; color:var(--text-secondary); font-family:'JetBrains Mono',monospace; margin-top:8px; padding-left:2px;}
+  .manual-computed b{ color:var(--green); font-size:14px; }
+
+  .toggle-manual{ width:40px; height:40px; border-radius:8px; border:1px solid var(--line); background:var(--bg-panel); color:var(--text-secondary); display:flex; align-items:center; justify-content:center; cursor:pointer; flex-shrink:0; font-size:16px;}
+  .toggle-manual.on{ background:var(--orange); border-color:var(--orange); color:#241008; }
+
+  .confirm-btn{ width:46px; height:46px; border-radius:50%; border:none; background:var(--line); color:var(--text-dim); display:flex; align-items:center; justify-content:center; cursor:pointer; flex-shrink:0; font-size:20px; transition:background .15s, color .15s;}
+  .confirm-btn.ready{ background:var(--green); color:#08211A; }
+
+  .nav-row{ display:flex; gap:10px; margin-top:12px; }
+  .nav-btn{ flex:1; padding:10px; border-radius:8px; border:1px solid var(--line); background:transparent; color:var(--text-secondary); font-family:'JetBrains Mono',monospace; font-size:12px; cursor:pointer; font-weight:600;}
+  .nav-btn:disabled{ opacity:0.3; }
+  .splice-flag{ display:inline-block; margin-left:8px; font-size:9px; padding:2px 6px; border-radius:4px; background:var(--amber-dim); color:var(--amber); letter-spacing:0.5px; font-family:'JetBrains Mono',monospace; vertical-align:middle;}
+
+  /* ---------- DRAWER ---------- */
+  .drawer-backdrop{ position:absolute; inset:0; background:rgba(0,0,0,0.5); z-index:10; opacity:0; pointer-events:none; transition:opacity .2s;}
+  .drawer-backdrop.open{ opacity:1; pointer-events:auto; }
+  .drawer{ position:absolute; top:0; left:0; bottom:0; width:86%; max-width:340px; background:var(--bg-panel); z-index:11; transform:translateX(-105%); transition:transform .22s ease; display:flex; flex-direction:column; border-right:1px solid var(--line);}
+  .drawer.open{ transform:translateX(0); }
+  .drawer-head{ padding:16px; border-bottom:1px solid var(--line); }
+  .drawer-head h3{ margin:0 0 2px; font-size:15px; }
+  .drawer-head p{ margin:0; font-size:11px; color:var(--text-secondary); font-family:'JetBrains Mono',monospace;}
+  .drawer-list{ flex:1; overflow-y:auto; }
+  .drawer-row{ display:flex; align-items:center; gap:10px; padding:10px 16px; border-bottom:1px solid var(--line-soft); cursor:pointer; }
+  .drawer-row.active{ background:var(--bg-panel-2); }
+  .drawer-row .idx{ width:20px; font-size:10px; color:var(--text-dim); font-family:'JetBrains Mono',monospace;}
+  .drawer-row .ab{ width:44px; font-family:'JetBrains Mono',monospace; font-size:13px; font-weight:600;}
+  .drawer-row .mn{ width:34px; font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--blue);}
+  .drawer-row .rho{ flex:1; text-align:right; font-family:'JetBrains Mono',monospace; font-size:13px; color:var(--text-secondary);}
+  .drawer-row.filled .rho{ color:var(--text-primary); }
+  .drawer-row .st{ width:16px; text-align:center; font-size:12px; }
+  .drawer-foot{ padding:14px 16px; border-top:1px solid var(--line); display:flex; gap:10px;}
+
+  #app.theme-field{
+    --bg-base:#FFFFFF;
+    --bg-panel:#FFFFFF;
+    --bg-panel-2:#ECEDE7;
+    --line:#14170F;
+    --line-soft:#6E7268;
+    --text-primary:#000000;
+    --text-secondary:#1C1F19;
+    --text-dim:#3A3E35;
+    --green:#0A6B38;
+    --green-dim:#CFE9D9;
+    --amber:#7A3A00;
+    --amber-dim:#F4DEC0;
+    --orange:#7A1E06;
+    --blue:#073762;
+  }
+  #app.theme-field .chart-zone{ background:var(--bg-base); }
+  #app.theme-field .drawer-row{ border-bottom-color:var(--line-soft); }
+  #app.theme-field .drawer-head, #app.theme-field .drawer-foot,
+  #app.theme-field .drawer{ border-color:var(--line); }
+  #app.theme-field .num,
+  #app.theme-field .readout input,
+  #app.theme-field .manual-fields input,
+  #app.theme-field .step-val .num{ font-weight:800; }
+  #app.theme-field .gps-coords,
+  #app.theme-field .sev-card-body .name,
+  #app.theme-field .drawer-row .ab{ font-weight:700; }
+  #app.theme-field .chart-legend{ font-weight:700; }
+  #app.theme-field .btn-major, #app.theme-field .btn-block, #app.theme-field .nav-btn{ font-weight:700; }
+
+  ::-webkit-scrollbar{ width:0; height:0;}
+</style>
 </head>
 <body>
 <div id="app"></div>
 
-<script src="app.js"></script>
+<script>
+/* ===================== ALMACENAMIENTO OFFLINE (IndexedDB) ===================== */
+// Esto es lo que hace que los datos sobrevivan a cerrar la app / apagar el celular.
+// No se ve como "carpeta" pero cumple la misma función: guardado local persistente.
+const DB_NAME = 'sevapp_db';
+const DB_VERSION = 1;
+const STORE = 'sevs';
+
+function openDatabase(){
+  return new Promise((resolve,reject)=>{
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = (e)=>{
+      const db = e.target.result;
+      if(!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE, {keyPath:'id'});
+    };
+    req.onsuccess = ()=> resolve(req.result);
+    req.onerror = ()=> reject(req.error);
+  });
+}
+let dbPromise = openDatabase().catch(err=>{ console.error('IndexedDB no disponible', err); return null; });
+
+async function dbGetAll(){
+  const db = await dbPromise; if(!db) return [];
+  return new Promise((resolve,reject)=>{
+    const tx = db.transaction(STORE,'readonly');
+    const req = tx.objectStore(STORE).getAll();
+    req.onsuccess = ()=> resolve(req.result);
+    req.onerror = ()=> reject(req.error);
+  });
+}
+async function dbPut(sev){
+  const db = await dbPromise; if(!db) return;
+  return new Promise((resolve,reject)=>{
+    const tx = db.transaction(STORE,'readwrite');
+    tx.objectStore(STORE).put(sev);
+    tx.oncomplete = ()=> resolve();
+    tx.onerror = ()=> reject(tx.error);
+  });
+}
+async function dbDelete(id){
+  const db = await dbPromise; if(!db) return;
+  return new Promise((resolve,reject)=>{
+    const tx = db.transaction(STORE,'readwrite');
+    tx.objectStore(STORE).delete(id);
+    tx.oncomplete = ()=> resolve();
+    tx.onerror = ()=> reject(tx.error);
+  });
+}
+// Guarda el SEV activo tanto en el estado en memoria como en IndexedDB.
+function persist(sev){ if(sev) dbPut(sev); }
+
+/* ===================== DATOS BASE ===================== */
+const AB2_LIST = [2,3,4,5,6,8,10,13,16,20,25,32,40,50,65,80,100,125,160,200,250,320,400,500];
+const MN_SHAPES = { 0.5:'circle', 5:'square', 20:'triangle' };
+const MN_COLORS_DARK  = { 0.5:'#5AA9E6', 5:'#3ED991', 20:'#FFB238' };
+const MN_COLORS_FIELD = { 0.5:'#073762', 5:'#0A6B38', 20:'#7A3A00' };
+function mnColors(){ return state.theme==='field' ? MN_COLORS_FIELD : MN_COLORS_DARK; }
+function chartPalette(){
+  return state.theme==='field'
+    ? { gridMajor:'#000000', gridMinor:'#5B5F55', axisText:'#000000', axisLine:'#000000', dimText:'#1C1F19' }
+    : { gridMajor:'#33424A', gridMinor:'#1E2A2F', axisText:'#6E8087', axisLine:'#455158', dimText:'#8FA0A6' };
+}
+function drawMarker(shape, x, y, r, color, opacity){
+  if(shape==='square'){ const s=r*1.7; return `<rect x="${(x-s/2).toFixed(1)}" y="${(y-s/2).toFixed(1)}" width="${s.toFixed(1)}" height="${s.toFixed(1)}" fill="${color}" opacity="${opacity}"/>`; }
+  if(shape==='triangle'){ const s=r*2.1, h=s*0.87; return `<polygon points="${x.toFixed(1)},${(y-h*0.62).toFixed(1)} ${(x-s/2).toFixed(1)},${(y+h*0.38).toFixed(1)} ${(x+s/2).toFixed(1)},${(y+h*0.38).toFixed(1)}" fill="${color}" opacity="${opacity}"/>`; }
+  return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r}" fill="${color}" opacity="${opacity}"/>`;
+}
+
+/* ===================== ZIP (sin dependencias externas) =====================
+   Arma un .zip real (método "store", sin compresión) en el propio navegador,
+   sin necesitar internet ni librerías externas — clave para que el backup
+   funcione aunque no haya señal en el campo. */
+function crc32(bytes){
+  let crc = 0xFFFFFFFF;
+  for(let i=0;i<bytes.length;i++){
+    let c = (crc ^ bytes[i]) & 0xFF;
+    for(let j=0;j<8;j++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    crc = (crc >>> 8) ^ c;
+  }
+  return (crc ^ 0xFFFFFFFF) >>> 0;
+}
+function dosDateTime(d){
+  const time = ((d.getHours()&0x1F)<<11) | ((d.getMinutes()&0x3F)<<5) | ((Math.floor(d.getSeconds()/2))&0x1F);
+  const date = (((d.getFullYear()-1980)&0x7F)<<9) | (((d.getMonth()+1)&0xF)<<5) | (d.getDate()&0x1F);
+  return {time, date};
+}
+function buildZip(files){
+  const {time, date} = dosDateTime(new Date());
+  const enc = new TextEncoder();
+  let localParts = [], centralParts = [], offset = 0;
+  files.forEach(f=>{
+    const nameBytes = enc.encode(f.name);
+    const dataBytes = typeof f.content === 'string' ? enc.encode(f.content) : f.content;
+    const crc = crc32(dataBytes);
+    const size = dataBytes.length;
+
+    const lh = new DataView(new ArrayBuffer(30));
+    lh.setUint32(0, 0x04034b50, true);
+    lh.setUint16(4, 20, true);
+    lh.setUint16(6, 0, true);
+    lh.setUint16(8, 0, true);
+    lh.setUint16(10, time, true);
+    lh.setUint16(12, date, true);
+    lh.setUint32(14, crc, true);
+    lh.setUint32(18, size, true);
+    lh.setUint32(22, size, true);
+    lh.setUint16(26, nameBytes.length, true);
+    lh.setUint16(28, 0, true);
+    localParts.push(new Uint8Array(lh.buffer), nameBytes, dataBytes);
+
+    const ch = new DataView(new ArrayBuffer(46));
+    ch.setUint32(0, 0x02014b50, true);
+    ch.setUint16(4, 20, true);
+    ch.setUint16(6, 20, true);
+    ch.setUint16(8, 0, true);
+    ch.setUint16(10, 0, true);
+    ch.setUint16(12, time, true);
+    ch.setUint16(14, date, true);
+    ch.setUint32(16, crc, true);
+    ch.setUint32(20, size, true);
+    ch.setUint32(24, size, true);
+    ch.setUint16(28, nameBytes.length, true);
+    ch.setUint16(30, 0, true);
+    ch.setUint16(32, 0, true);
+    ch.setUint16(34, 0, true);
+    ch.setUint16(36, 0, true);
+    ch.setUint32(38, 0, true);
+    ch.setUint32(42, offset, true);
+    centralParts.push(new Uint8Array(ch.buffer), nameBytes);
+
+    offset += 30 + nameBytes.length + size;
+  });
+  const centralSize = centralParts.reduce((a,b)=>a+b.length,0);
+  const end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true);
+  end.setUint16(8, files.length, true);
+  end.setUint16(10, files.length, true);
+  end.setUint32(12, centralSize, true);
+  end.setUint32(16, offset, true);
+  return new Blob([...localParts, ...centralParts, new Uint8Array(end.buffer)], {type:'application/zip'});
+}
+
+function exportAllZip(){
+  if(state.sevs.length===0){ alert('Todavía no hay sondeos guardados.'); return; }
+  const files = [];
+  const resumen = [['Nombre','Fecha','Lat','Lon','Puntos_cargados']];
+  state.sevs.forEach(sev=>{
+    const folder = 'datos_sevapp/' + (sev.fechaISO || 'sin-fecha') + '/';
+    const rows = [['AB/2','MN/2','Resistividad_Ohm_m','Modo','Corriente_mA','DeltaV_mV','Lat','Lon','Timestamp'], ...sevToRows(sev)];
+    files.push({ name: folder + sev.nombre + '.csv', content: rows.map(r=>r.join(',')).join('\n') });
+    files.push({ name: folder + sev.nombre + '.json', content: JSON.stringify(sev, null, 2) });
+    resumen.push([sev.nombre, sev.fecha, sev.gps.lat.toFixed(6), sev.gps.lon.toFixed(6), Object.keys(sev.lecturas).length]);
+  });
+  files.push({ name: 'datos_sevapp/resumen.csv', content: resumen.map(r=>r.join(',')).join('\n') });
+  const blob = buildZip(files);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'datos_sevapp_backup_' + new Date().toISOString().slice(0,10) + '.zip';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function buildSteps(){
+  const steps = [];
+  AB2_LIST.forEach(ab2=>{
+    const mns = [];
+    if(ab2 <= 65) mns.push(0.5);
+    if(ab2 >= 50 && ab2 <= 250) mns.push(5);
+    if(ab2 >= 200) mns.push(20);
+    mns.sort((a,b)=>a-b).forEach(mn=> steps.push({ab2, mn2:mn, splice: mns.length>1}));
+  });
+  return steps;
+}
+const STEPS = buildSteps();
+
+function kFactor(ab2, mn2){
+  return Math.PI * (ab2*ab2 - mn2*mn2) / (2*mn2);
+}
+
+/* ===================== ESTADO ===================== */
+let state = {
+  screen:'home',           // home | list | new | carga
+  theme:'dark',             // dark | field (alto contraste para sol)
+  sevs: [],                 // { id, nombre, gps, historialGps, fecha, lecturas:{}, stepIndex }
+  currentSevId: null,
+  drawerOpen:false,
+  manualMode:false,
+  overlayIds: [],
+  formValue:'',
+  formI:'',
+  formDV:'',
+  newSevDraft:null
+};
+
+function uid(){ return 's'+Math.random().toString(36).slice(2,9); }
+function fmtCoord(v){ return v.toFixed(5); }
+function nowStr(){
+  const d = new Date();
+  return d.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit'}) + ' ' + d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'});
+}
+
+function currentSev(){ return state.sevs.find(s=>s.id===state.currentSevId); }
+
+function lecturaKey(ab2,mn2){ return ab2+'_'+mn2; }
+
+function sevProgress(sev){
+  const total = STEPS.length;
+  const done = Object.keys(sev.lecturas).length;
+  return {done, total, pct: Math.round(done/total*100)};
+}
+
+/* ===================== GPS (simulado) ===================== */
+function simulateGps(){
+  // Simula una posición realista (San Juan, AR aprox) con pequeño jitter, ya que
+  // el prototipo corre en un iframe sin permiso real de geolocalización.
+  const base = { lat:-31.5375, lon:-68.5364 };
+  const jitter = ()=> (Math.random()-0.5)*0.002;
+  return { lat: base.lat + jitter(), lon: base.lon + jitter(), prec: Math.round(4+Math.random()*8), ts: Date.now() };
+}
+
+/* ===================== RENDER ROOT ===================== */
+function render(){
+  const app = document.getElementById('app');
+  app.className = state.theme==='field' ? 'theme-field' : '';
+  app.innerHTML = '';
+  if(state.screen==='home') app.appendChild(renderHome());
+  else if(state.screen==='list') app.appendChild(renderList());
+  else if(state.screen==='new') app.appendChild(renderNew());
+  else if(state.screen==='carga') app.appendChild(renderCarga());
+}
+
+/* ===================== HOME ===================== */
+function renderHome(){
+  const el = document.createElement('div');
+  el.className = 'screen home';
+  el.innerHTML = `
+    <div class="home-brand">
+      <div class="mark">SEV · SCHLUMBERGER</div>
+      <h1>Campo</h1>
+      <p>Visualización y cálculo de resistividad — offline</p>
+    </div>
+    <div class="home-actions">
+      <button class="btn-major primary" id="btnNuevo">
+        <div>Nuevo SEV<small>Captura GPS y arranca la carga</small></div>
+        <span class="chev">›</span>
+      </button>
+      <button class="btn-major" id="btnContinuar">
+        <div>Continuar SEV<small>${state.sevs.length} guardado${state.sevs.length===1?'':'s'} en este dispositivo</small></div>
+        <span class="chev">›</span>
+      </button>
+      ${state.sevs.length>0 ? `<button class="btn-ghost" id="btnExportAll" style="margin-top:6px;">⭳ Exportar backup completo (.zip)</button>` : ''}
+    </div>
+    <div class="home-footer">ARES II · MODO CAMPO</div>
+  `;
+  el.querySelector('#btnNuevo').onclick = ()=>{ startNewSev(); };
+  el.querySelector('#btnContinuar').onclick = ()=>{ state.screen='list'; render(); };
+  const exportBtn = el.querySelector('#btnExportAll');
+  if(exportBtn) exportBtn.onclick = ()=> exportAllZip();
+  return el;
+}
+
+/* ===================== LIST ===================== */
+function renderList(){
+  const el = document.createElement('div');
+  el.className = 'screen';
+  const overlayMode = state.overlayIds.length>0;
+  el.innerHTML = `
+    <div class="topbar">
+      <div class="icon-btn" id="back">‹</div>
+      <div class="topbar-title">Sondeos guardados<small>Tocá uno para continuar · mantené para comparar</small></div>
+    </div>
+    <div class="list-wrap" id="listWrap"></div>
+    <div class="list-footer" id="listFooter"></div>
+  `;
+  const wrap = el.querySelector('#listWrap');
+  if(state.sevs.length===0){
+    wrap.innerHTML = `<div class="empty-hint">No hay sondeos todavía.<br>Tocá "Nuevo SEV" para empezar.</div>`;
+  } else {
+    state.sevs.slice().reverse().forEach(sev=>{
+      const p = sevProgress(sev);
+      const card = document.createElement('div');
+      card.className = 'sev-card' + (p.pct===100?' done':'');
+      const checked = state.overlayIds.includes(sev.id);
+      card.innerHTML = `
+        <div class="check-overlay ${checked?'on':''}" data-ov="${sev.id}">${checked?'✓':''}</div>
+        <div class="dot"></div>
+        <div class="sev-card-body">
+          <div class="name">${sev.nombre}</div>
+          <div class="meta">${sev.fecha} · ${fmtCoord(sev.gps.lat)}, ${fmtCoord(sev.gps.lon)}</div>
+        </div>
+        <div class="pct">${p.done}/${p.total}</div>
+      `;
+      card.onclick = (e)=>{
+        if(e.target.closest('[data-ov]')){
+          const id = sev.id;
+          const idx = state.overlayIds.indexOf(id);
+          if(idx>=0) state.overlayIds.splice(idx,1); else state.overlayIds.push(id);
+          render();
+          return;
+        }
+        state.currentSevId = sev.id;
+        state.screen='carga';
+        state.manualMode=false;
+        syncFormFromCurrentStep();
+        render();
+      };
+      wrap.appendChild(card);
+    });
+  }
+  const footer = el.querySelector('#listFooter');
+  if(state.overlayIds.length>0){
+    footer.innerHTML = `<button class="btn-block accent" id="verComp">Ver comparación (${state.overlayIds.length})</button>`;
+    footer.querySelector('#verComp').onclick = ()=>{
+      // abre el primero en modo carga con overlay activo
+      state.currentSevId = state.overlayIds[0];
+      state.screen='carga';
+      syncFormFromCurrentStep();
+      render();
+    };
+  } else {
+    footer.innerHTML = `<button class="btn-block" id="tickHint" disabled>Tildá 2-3 sondeos para superponerlos en el gráfico</button>`;
+  }
+  el.querySelector('#back').onclick = ()=>{ state.screen='home'; render(); };
+  return el;
+}
+
+/* ===================== NEW SEV ===================== */
+function startNewSev(){
+  const gps = simulateGps();
+  const count = state.sevs.length+1;
+  const now = new Date();
+  state.newSevDraft = {
+    id: uid(),
+    nombre: 'SEV-' + String(count).padStart(2,'0'),
+    gps, historialGps:[gps],
+    fecha: nowStr(),
+    fechaISO: now.toISOString().slice(0,10), // AAAA-MM-DD, para nombrar archivos exportados
+    createdAt: now.getTime(),
+    lecturas: {},
+    stepIndex: 0
+  };
+  state.screen='new';
+  render();
+}
+
+function renderNew(){
+  const el = document.createElement('div');
+  el.className='screen';
+  const d = state.newSevDraft;
+  el.innerHTML = `
+    <div class="topbar">
+      <div class="icon-btn" id="back">‹</div>
+      <div class="topbar-title">Nuevo SEV</div>
+    </div>
+    <div class="new-sev-body">
+      <div class="field">
+        <label>Nombre del punto</label>
+        <input type="text" id="nameInput" value="${d.nombre}">
+      </div>
+      <div class="field">
+        <label>Posición GPS</label>
+        <div class="gps-box">
+          <div class="gps-row">
+            <div class="gps-icon">📍</div>
+            <div>
+              <div class="gps-coords">${fmtCoord(d.gps.lat)}, ${fmtCoord(d.gps.lon)}</div>
+              <div class="gps-precision">± ${d.gps.prec} m · capturado ${new Date(d.gps.ts).toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})}</div>
+            </div>
+          </div>
+          <button class="btn-ghost" id="remedir">↻ Re-medir posición</button>
+        </div>
+      </div>
+    </div>
+    <div class="new-sev-footer">
+      <button class="btn-block accent" id="empezar">Comenzar carga de datos</button>
+    </div>
+  `;
+  el.querySelector('#back').onclick = ()=>{ state.newSevDraft=null; state.screen='home'; render(); };
+  el.querySelector('#nameInput').oninput = (e)=>{ d.nombre = e.target.value; };
+  el.querySelector('#remedir').onclick = ()=>{
+    d.gps = simulateGps();
+    d.historialGps.push(d.gps);
+    render();
+  };
+  el.querySelector('#empezar').onclick = ()=>{
+    state.sevs.push(d);
+    state.currentSevId = d.id;
+    state.newSevDraft = null;
+    state.screen='carga';
+    state.manualMode=false;
+    syncFormFromCurrentStep();
+    persist(d);
+    render();
+  };
+  return el;
+}
+
+/* ===================== CARGA ===================== */
+function syncFormFromCurrentStep(){
+  const sev = currentSev(); if(!sev) return;
+  const step = STEPS[sev.stepIndex];
+  const key = lecturaKey(step.ab2, step.mn2);
+  const lec = sev.lecturas[key];
+  state.manualMode = lec ? lec.modo==='manual' : false;
+  state.formValue = lec ? String(lec.resistividad) : '';
+  state.formI = lec && lec.I!=null ? String(lec.I) : '';
+  state.formDV = lec && lec.dV!=null ? String(lec.dV) : '';
+}
+
+// Determina si hay un valor cargado en el formulario que todavía no fue confirmado
+// (nuevo, o distinto del que ya está guardado para ese punto). Eso es lo único
+// que pinta el tilde de verde; si coincide con lo guardado (o está vacío) queda gris.
+function isFormDirty(savedLec){
+  if(state.manualMode){
+    const I = parseFloat(state.formI), dV = parseFloat(state.formDV);
+    if(isNaN(I) || isNaN(dV) || I===0) return false;
+    if(!savedLec || savedLec.modo!=='manual') return true;
+    return (savedLec.I !== I) || (savedLec.dV !== dV);
+  } else {
+    if(state.formValue === '' || state.formValue===null) return false;
+    const rho = parseFloat(state.formValue);
+    if(isNaN(rho) || rho<0) return false;
+    if(!savedLec || savedLec.modo!=='directo') return true;
+    return savedLec.resistividad !== rho;
+  }
+}
+
+function renderCarga(){
+  const el = document.createElement('div');
+  el.className='screen';
+  const sev = currentSev();
+  const step = STEPS[sev.stepIndex];
+  const key = lecturaKey(step.ab2, step.mn2);
+  const savedLec = sev.lecturas[key];
+  const p = sevProgress(sev);
+
+  el.innerHTML = `
+    <div class="topbar carga-topbar">
+      <div class="icon-btn" id="openDrawer">☰</div>
+      <div class="topbar-title" style="text-align:center;">${sev.nombre}<small>${p.done}/${p.total} puntos cargados</small></div>
+      <div class="icon-btn" id="themeToggle" title="${state.theme==='field'?'Volver a modo oscuro':'Modo campo (alto contraste)'}">${state.theme==='field'?'🌙':'☀'}</div>
+    </div>
+    <div class="chart-zone">
+      <div class="chart-legend">
+        <span style="color:${mnColors()[0.5]}">● MN 0.5</span>
+        <span style="color:${mnColors()[5]}">■ MN 5</span>
+        <span style="color:${mnColors()[20]}">▲ MN 20</span>
+      </div>
+      <div id="chartHolder" style="width:100%;height:100%;"></div>
+    </div>
+    <div class="panel">
+      <div class="step-row">
+        <div class="step-vals">
+          <div class="step-val"><div class="lab">AB/2 (m)</div><div class="num">${step.ab2}</div></div>
+          <div class="step-val"><div class="lab">MN/2 (m)</div><div class="num mn">${step.mn2}${step.splice?`<span class="splice-flag">EMPALME</span>`:''}</div></div>
+        </div>
+        <div class="step-progress">PASO ${sev.stepIndex+1}/${STEPS.length}</div>
+      </div>
+
+      <div style="display:flex; gap:10px; align-items:center;">
+        <div class="readout ${state.manualMode?'manual':''}" style="flex:1;" id="readoutBox"></div>
+        <div class="toggle-manual ${state.manualMode?'on':''}" id="toggleManual" title="Carga manual (I y ΔV)">⚡</div>
+        <button class="confirm-btn ${isFormDirty(savedLec) ? 'ready' : ''}" id="confirmBtn">✓</button>
+      </div>
+
+      <div class="nav-row">
+        <button class="nav-btn" id="prevStep" ${sev.stepIndex===0?'disabled':''}>‹ ANTERIOR</button>
+        <button class="nav-btn" id="nextStep" ${sev.stepIndex===STEPS.length-1?'disabled':''}>SIGUIENTE ›</button>
+      </div>
+    </div>
+    <div class="drawer-backdrop" id="backdrop"></div>
+    <div class="drawer" id="drawer"></div>
+  `;
+
+  const confirmBtn = el.querySelector('#confirmBtn');
+
+  // readout box content
+  const readoutBox = el.querySelector('#readoutBox');
+  if(!state.manualMode){
+    readoutBox.innerHTML = `
+      <div class="readout-main">
+        <label>RESISTIVIDAD APARENTE</label>
+        <input type="number" inputmode="decimal" id="rhoInput" placeholder="0.0" value="${state.formValue}">
+      </div>
+      <div class="unit-suffix">Ω·m</div>
+    `;
+    readoutBox.querySelector('#rhoInput').oninput = (e)=>{
+      state.formValue = e.target.value;
+      confirmBtn.classList.toggle('ready', isFormDirty(savedLec));
+    };
+  } else {
+    const ab2=step.ab2, mn2=step.mn2;
+    const I = parseFloat(state.formI), dV = parseFloat(state.formDV);
+    let computed = null;
+    if(!isNaN(I) && !isNaN(dV) && I!==0){
+      computed = kFactor(ab2,mn2) * Math.abs(dV) / I;
+    }
+    readoutBox.innerHTML = `
+      <div class="manual-fields">
+        <div class="mf"><label>CORRIENTE I (mA)</label><input type="number" inputmode="decimal" id="iInput" placeholder="0.0" value="${state.formI}"></div>
+        <div class="mf"><label>ΔV (mV)</label><input type="number" inputmode="decimal" id="dvInput" placeholder="0.0" value="${state.formDV}"></div>
+      </div>
+    `;
+    const computedNote = document.createElement('div');
+    computedNote.className='manual-computed';
+    computedNote.innerHTML = computed!=null ? `ρₐ calculada: <b>${computed.toFixed(2)} Ω·m</b>` : `ρₐ calculada: <b>—</b>`;
+    // append below via panel restructure: put note under readout row
+    el.querySelector('.panel').insertBefore(computedNote, el.querySelector('.nav-row'));
+
+    const iInputEl = readoutBox.querySelector('#iInput');
+    const dvInputEl = readoutBox.querySelector('#dvInput');
+    function recomputeManual(){
+      state.formI = iInputEl.value; state.formDV = dvInputEl.value;
+      const I2 = parseFloat(state.formI), dV2 = parseFloat(state.formDV);
+      let c = null;
+      if(!isNaN(I2) && !isNaN(dV2) && I2!==0) c = kFactor(ab2,mn2) * Math.abs(dV2) / I2;
+      computedNote.innerHTML = c!=null ? `ρₐ calculada: <b>${c.toFixed(2)} Ω·m</b>` : `ρₐ calculada: <b>—</b>`;
+      confirmBtn.classList.toggle('ready', isFormDirty(savedLec));
+    }
+    iInputEl.oninput = recomputeManual;
+    dvInputEl.oninput = recomputeManual;
+  }
+
+  // toggle manual
+  el.querySelector('#toggleManual').onclick = ()=>{
+    state.manualMode = !state.manualMode;
+    render();
+  };
+
+  el.querySelector('#themeToggle').onclick = ()=>{
+    state.theme = state.theme==='field' ? 'dark' : 'field';
+    render();
+  };
+
+  // confirm
+  el.querySelector('#confirmBtn').onclick = ()=>{ confirmCurrentStep(); };
+
+  // nav
+  el.querySelector('#prevStep').onclick = ()=>{ sev.stepIndex = Math.max(0, sev.stepIndex-1); syncFormFromCurrentStep(); persist(sev); render(); };
+  el.querySelector('#nextStep').onclick = ()=>{ sev.stepIndex = Math.min(STEPS.length-1, sev.stepIndex+1); syncFormFromCurrentStep(); persist(sev); render(); };
+
+  // drawer
+  const drawer = el.querySelector('#drawer');
+  const backdrop = el.querySelector('#backdrop');
+  drawer.appendChild(renderDrawerContent(sev));
+  if(state.drawerOpen){ drawer.classList.add('open'); backdrop.classList.add('open'); }
+  el.querySelector('#openDrawer').onclick = ()=>{ state.drawerOpen=true; render(); };
+  backdrop.onclick = ()=>{ state.drawerOpen=false; render(); };
+
+  // chart
+  const chartData = getChartSeries();
+  el.querySelector('#chartHolder').appendChild(buildChartSvg(chartData, {ab2:step.ab2, mn2:step.mn2}));
+
+  return el;
+}
+
+function updateConfirmState(){
+  // solo re-renderiza el botón de confirmar sin perder foco del input de texto —
+  // en este prototipo simplificamos re-renderizando completo salvo mientras se tipea.
+}
+
+function getChartSeries(){
+  const series = [];
+  const ids = state.overlayIds.length>0 ? Array.from(new Set([state.currentSevId, ...state.overlayIds])) : [state.currentSevId];
+  ids.forEach((id,i)=>{
+    const sev = state.sevs.find(s=>s.id===id);
+    if(!sev) return;
+    const points = STEPS.map(st=>{
+      const lec = sev.lecturas[lecturaKey(st.ab2, st.mn2)];
+      return lec ? {ab2:st.ab2, mn2:st.mn2, rho:lec.resistividad} : null;
+    }).filter(Boolean);
+    series.push({ id, nombre: sev.nombre, points, dim: i>0 });
+  });
+  return series;
+}
+
+function confirmCurrentStep(){
+  const sev = currentSev();
+  const step = STEPS[sev.stepIndex];
+  const key = lecturaKey(step.ab2, step.mn2);
+  let rho, I=null, dV=null, modo;
+  if(state.manualMode){
+    I = parseFloat(state.formI); dV = parseFloat(state.formDV);
+    if(isNaN(I) || isNaN(dV) || I===0) return;
+    rho = kFactor(step.ab2, step.mn2) * Math.abs(dV) / I;
+    modo='manual';
+  } else {
+    rho = parseFloat(state.formValue);
+    if(isNaN(rho) || rho<0) return;
+    modo='directo';
+  }
+  sev.lecturas[key] = { ab2:step.ab2, mn2:step.mn2, resistividad:rho, I, dV, modo, ts:Date.now() };
+  if(sev.stepIndex < STEPS.length-1){
+    sev.stepIndex++;
+    syncFormFromCurrentStep();
+  }
+  persist(sev);
+  render();
+}
+
+/* ---------- Drawer content ---------- */
+function renderDrawerContent(sev){
+  const wrap = document.createElement('div');
+  wrap.style.display='contents';
+  const p = sevProgress(sev);
+  const head = document.createElement('div');
+  head.className='drawer-head';
+  head.innerHTML = `<h3>${sev.nombre}</h3><p>${p.done}/${p.total} puntos · ${fmtCoord(sev.gps.lat)}, ${fmtCoord(sev.gps.lon)}</p>`;
+  const list = document.createElement('div');
+  list.className='drawer-list';
+  STEPS.forEach((st,i)=>{
+    const key = lecturaKey(st.ab2, st.mn2);
+    const lec = sev.lecturas[key];
+    const row = document.createElement('div');
+    row.className = 'drawer-row' + (lec?' filled':'') + (i===sev.stepIndex?' active':'');
+    row.innerHTML = `
+      <div class="idx">${i+1}</div>
+      <div class="ab">${st.ab2} m</div>
+      <div class="mn" style="color:${mnColors()[st.mn2]}">${st.mn2}</div>
+      <div class="rho">${lec? lec.resistividad.toFixed(1)+' Ω·m' : '—'}</div>
+      <div class="st">${lec ? (lec.modo==='manual' ? '⚡' : '✓') : ''}</div>
+    `;
+    row.onclick = ()=>{ sev.stepIndex = i; syncFormFromCurrentStep(); state.drawerOpen=false; persist(sev); render(); };
+    list.appendChild(row);
+  });
+  const foot = document.createElement('div');
+  foot.className='drawer-foot';
+  foot.innerHTML = `<button class="btn-block" id="exportCsvBtn">CSV</button><button class="btn-block" id="exportJsonBtn">JSON</button>`;
+  wrap.appendChild(head); wrap.appendChild(list); wrap.appendChild(foot);
+  setTimeout(()=>{
+    const csvBtn = foot.querySelector('#exportCsvBtn'); if(csvBtn) csvBtn.onclick = ()=> exportCsv(sev);
+    const jsonBtn = foot.querySelector('#exportJsonBtn'); if(jsonBtn) jsonBtn.onclick = ()=> exportJson(sev);
+  },0);
+  return wrap;
+}
+
+function downloadBlob(content, type, filename){
+  const blob = new Blob([content], {type});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function sevToRows(sev){
+  const rows = [];
+  STEPS.forEach(st=>{
+    const lec = sev.lecturas[lecturaKey(st.ab2,st.mn2)];
+    if(lec) rows.push([st.ab2, st.mn2, lec.resistividad.toFixed(3), lec.modo, lec.I??'', lec.dV??'', sev.gps.lat.toFixed(6), sev.gps.lon.toFixed(6), new Date(lec.ts).toISOString()]);
+  });
+  return rows;
+}
+
+function exportCsv(sev){
+  const rows = [['AB/2','MN/2','Resistividad_Ohm_m','Modo','Corriente_mA','DeltaV_mV','Lat','Lon','Timestamp'], ...sevToRows(sev)];
+  const csv = rows.map(r=>r.join(',')).join('\n');
+  downloadBlob(csv, 'text/csv', `${sev.fechaISO||'sf'}_${sev.nombre}.csv`);
+}
+
+function exportJson(sev){
+  downloadBlob(JSON.stringify(sev, null, 2), 'application/json', `${sev.fechaISO||'sf'}_${sev.nombre}.json`);
+}
+
+/* ===================== CHART (SVG log-log estilo papel bilog) ===================== */
+function buildChartSvg(series, currentPoint){
+  const W = 800, H = 620;
+  const marginL = 56, marginR = 18, marginT = 14, marginB = 34;
+  const plotW = W - marginL - marginR;
+  const plotH = H - marginT - marginB;
+
+  const xMinDec = 0;   // 10^0 = 1
+  const xMaxDec = 3;   // 10^3 = 1000
+  // rango Y dinámico según datos, con piso 1 - 10^3 por defecto
+  let allRho = [];
+  series.forEach(s=> s.points.forEach(p=> allRho.push(p.rho)));
+  let yMinDec = 0, yMaxDec = 3;
+  if(allRho.length){
+    const mn = Math.min(...allRho), mx = Math.max(...allRho);
+    yMinDec = Math.floor(Math.log10(Math.max(mn*0.5,0.1)));
+    yMaxDec = Math.ceil(Math.log10(mx*1.8));
+    if(yMaxDec-yMinDec<2){ yMaxDec = yMinDec+2; }
+  }
+
+  function xPix(ab2){ return marginL + (Math.log10(ab2)-xMinDec)/(xMaxDec-xMinDec)*plotW; }
+  function yPix(rho){ return marginT + plotH - (Math.log10(rho)-yMinDec)/(yMaxDec-yMinDec)*plotH; }
+
+  const pal = chartPalette();
+  let svg = `<svg viewBox="0 0 ${W} ${H}" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg" style="display:block;">`;
+
+  // fondo panel
+  svg += `<rect x="0" y="0" width="${W}" height="${H}" fill="none"/>`;
+
+  // grid log-log estilo papel bilogarítmico: líneas menores en 2..9, mayores en potencias de 10
+  for(let dec=xMinDec; dec<=xMaxDec; dec++){
+    for(let m=1; m<=9; m++){
+      const val = m*Math.pow(10,dec);
+      if(Math.log10(val) > xMaxDec) continue;
+      const x = xPix(val);
+      const major = (m===1);
+      svg += `<line x1="${x}" y1="${marginT}" x2="${x}" y2="${marginT+plotH}" stroke="${major?pal.gridMajor:pal.gridMinor}" stroke-width="${major?1:0.6}" opacity="${major?1:0.7}"/>`;
+      if(major){
+        svg += `<text x="${x}" y="${H-14}" fill="${pal.axisText}" font-size="12" font-weight="600" font-family="JetBrains Mono, monospace" text-anchor="middle">${val>=1000?val/1000+'k':val}</text>`;
+      }
+    }
+  }
+  for(let dec=yMinDec; dec<=yMaxDec; dec++){
+    for(let m=1; m<=9; m++){
+      const val = m*Math.pow(10,dec);
+      if(Math.log10(val) > yMaxDec || Math.log10(val) < yMinDec) continue;
+      const y = yPix(val);
+      const major = (m===1);
+      svg += `<line x1="${marginL}" y1="${y}" x2="${marginL+plotW}" y2="${y}" stroke="${major?pal.gridMajor:pal.gridMinor}" stroke-width="${major?1:0.6}" opacity="${major?1:0.7}"/>`;
+      if(major){
+        const label = val>=1000?(val/1000)+'k':val;
+        svg += `<text x="${marginL-8}" y="${y+4}" fill="${pal.axisText}" font-size="12" font-weight="600" font-family="JetBrains Mono, monospace" text-anchor="end">${label}</text>`;
+      }
+    }
+  }
+  // ejes
+  svg += `<line x1="${marginL}" y1="${marginT}" x2="${marginL}" y2="${marginT+plotH}" stroke="${pal.axisLine}" stroke-width="1.5"/>`;
+  svg += `<line x1="${marginL}" y1="${marginT+plotH}" x2="${marginL+plotW}" y2="${marginT+plotH}" stroke="${pal.axisLine}" stroke-width="1.5"/>`;
+  svg += `<text x="${marginL+plotW/2}" y="${H-1}" fill="${pal.dimText}" font-size="11" font-weight="600" font-family="JetBrains Mono, monospace" text-anchor="middle">AB/2 (m)</text>`;
+
+  // series
+  const colors = mnColors();
+  series.forEach((s)=>{
+    if(s.points.length===0) return;
+    // separar en segmentos por mn2 consecutivos ordenados por ab2
+    const sorted = [...s.points].sort((a,b)=>a.ab2-b.ab2);
+    const byMn = {};
+    sorted.forEach(p=>{ (byMn[p.mn2] = byMn[p.mn2]||[]).push(p); });
+    const opacity = s.dim ? 0.5 : 1;
+    Object.entries(byMn).forEach(([mn,pts])=>{
+      const color = colors[mn] || '#999';
+      const shape = MN_SHAPES[mn] || 'circle';
+      const path = pts.map((p,i)=> (i===0?'M':'L') + xPix(p.ab2).toFixed(1) + ',' + yPix(p.rho).toFixed(1)).join(' ');
+      svg += `<path d="${path}" fill="none" stroke="${color}" stroke-width="${s.dim?1.6:2.6}" opacity="${opacity}"/>`;
+      pts.forEach(p=>{
+        svg += drawMarker(shape, xPix(p.ab2), yPix(p.rho), s.dim?3.2:5, color, opacity);
+      });
+    });
+    if(s.dim){
+      const last = sorted[sorted.length-1];
+      svg += `<text x="${xPix(last.ab2)+6}" y="${yPix(last.rho)}" fill="${pal.dimText}" font-size="10" font-weight="600" font-family="JetBrains Mono, monospace">${s.nombre}</text>`;
+    }
+  });
+
+  // punto actual (paso activo) resaltado si aún no tiene valor
+  if(currentPoint){
+    const x = xPix(currentPoint.ab2);
+    svg += `<line x1="${x}" y1="${marginT}" x2="${x}" y2="${marginT+plotH}" stroke="${state.theme==='field'?'#7A1E06':'#FFB238'}" stroke-width="1.5" stroke-dasharray="4 4" opacity="0.7"/>`;
+  }
+
+  svg += `</svg>`;
+  const holder = document.createElement('div');
+  holder.style.width='100%'; holder.style.height='100%';
+  holder.innerHTML = svg;
+  return holder;
+}
+
+/* ===================== INIT ===================== */
+if('serviceWorker' in navigator){
+  // Si el archivo se abre como file:// (doble clic, sin hostear) esto falla
+  // silenciosamente y la app igual funciona, solo sin caché de service worker.
+  navigator.serviceWorker.register('./service-worker.js').catch(()=>{});
+}
+async function init(){
+  render(); // primer pintado inmediato (mientras se abre la base local)
+  try{
+    const saved = await dbGetAll();
+    state.sevs = saved.sort((a,b)=> (a.createdAt||0)-(b.createdAt||0));
+  }catch(e){
+    console.error('No se pudieron leer los sondeos guardados', e);
+  }
+  render();
+}
+init();
+</script>
 </body>
 </html>
