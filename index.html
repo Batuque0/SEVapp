@@ -43,7 +43,7 @@
     user-select:none;
   }
   .mono{ font-family:'JetBrains Mono', monospace; }
-  #app{ position:relative; width:100%; height:100vh; max-width:480px; margin:0 auto; background:var(--bg-base); display:flex; flex-direction:column; }
+  #app{ position:relative; width:100%; height:100vh; max-width:480px; margin:0 auto; background:var(--bg-base); color:var(--text-primary); display:flex; flex-direction:column; }
 
   /* ---------- HOME ---------- */
   .screen{ position:absolute; inset:0; display:flex; flex-direction:column; }
@@ -371,6 +371,14 @@ function buildSteps(){
 }
 const STEPS = buildSteps();
 
+// Interpreta números escritos con coma decimal (celulares en español) o con
+// punto (por si el operario tipea con teclado en inglés) — acepta ambos.
+function parseLocaleNumber(str){
+  if(str===null || str===undefined) return NaN;
+  const cleaned = String(str).trim().replace(',', '.');
+  return parseFloat(cleaned);
+}
+
 function kFactor(ab2, mn2){
   return Math.PI * (ab2*ab2 - mn2*mn2) / (2*mn2);
 }
@@ -610,13 +618,13 @@ function syncFormFromCurrentStep(){
 // que pinta el tilde de verde; si coincide con lo guardado (o está vacío) queda gris.
 function isFormDirty(savedLec){
   if(state.manualMode){
-    const I = parseFloat(state.formI), dV = parseFloat(state.formDV);
+    const I = parseLocaleNumber(state.formI), dV = parseLocaleNumber(state.formDV);
     if(isNaN(I) || isNaN(dV) || I===0) return false;
     if(!savedLec || savedLec.modo!=='manual') return true;
     return (savedLec.I !== I) || (savedLec.dV !== dV);
   } else {
     if(state.formValue === '' || state.formValue===null) return false;
-    const rho = parseFloat(state.formValue);
+    const rho = parseLocaleNumber(state.formValue);
     if(isNaN(rho) || rho<0) return false;
     if(!savedLec || savedLec.modo!=='directo') return true;
     return savedLec.resistividad !== rho;
@@ -678,7 +686,7 @@ function renderCarga(){
     readoutBox.innerHTML = `
       <div class="readout-main">
         <label>RESISTIVIDAD APARENTE</label>
-        <input type="number" inputmode="decimal" id="rhoInput" placeholder="0.0" value="${state.formValue}">
+        <input type="text" inputmode="decimal" id="rhoInput" placeholder="0.0" value="${state.formValue}">
       </div>
       <div class="unit-suffix">Ω·m</div>
     `;
@@ -688,15 +696,15 @@ function renderCarga(){
     };
   } else {
     const ab2=step.ab2, mn2=step.mn2;
-    const I = parseFloat(state.formI), dV = parseFloat(state.formDV);
+    const I = parseLocaleNumber(state.formI), dV = parseLocaleNumber(state.formDV);
     let computed = null;
     if(!isNaN(I) && !isNaN(dV) && I!==0){
       computed = kFactor(ab2,mn2) * Math.abs(dV) / I;
     }
     readoutBox.innerHTML = `
       <div class="manual-fields">
-        <div class="mf"><label>CORRIENTE I (mA)</label><input type="number" inputmode="decimal" id="iInput" placeholder="0.0" value="${state.formI}"></div>
-        <div class="mf"><label>ΔV (mV)</label><input type="number" inputmode="decimal" id="dvInput" placeholder="0.0" value="${state.formDV}"></div>
+        <div class="mf"><label>CORRIENTE I (mA)</label><input type="text" inputmode="decimal" id="iInput" placeholder="0.0" value="${state.formI}"></div>
+        <div class="mf"><label>ΔV (mV)</label><input type="text" inputmode="decimal" id="dvInput" placeholder="0.0" value="${state.formDV}"></div>
       </div>
     `;
     const computedNote = document.createElement('div');
@@ -709,7 +717,7 @@ function renderCarga(){
     const dvInputEl = readoutBox.querySelector('#dvInput');
     function recomputeManual(){
       state.formI = iInputEl.value; state.formDV = dvInputEl.value;
-      const I2 = parseFloat(state.formI), dV2 = parseFloat(state.formDV);
+      const I2 = parseLocaleNumber(state.formI), dV2 = parseLocaleNumber(state.formDV);
       let c = null;
       if(!isNaN(I2) && !isNaN(dV2) && I2!==0) c = kFactor(ab2,mn2) * Math.abs(dV2) / I2;
       computedNote.innerHTML = c!=null ? `ρₐ calculada: <b>${c.toFixed(2)} Ω·m</b>` : `ρₐ calculada: <b>—</b>`;
@@ -778,12 +786,12 @@ function confirmCurrentStep(){
   const key = lecturaKey(step.ab2, step.mn2);
   let rho, I=null, dV=null, modo;
   if(state.manualMode){
-    I = parseFloat(state.formI); dV = parseFloat(state.formDV);
+    I = parseLocaleNumber(state.formI); dV = parseLocaleNumber(state.formDV);
     if(isNaN(I) || isNaN(dV) || I===0) return;
     rho = kFactor(step.ab2, step.mn2) * Math.abs(dV) / I;
     modo='manual';
   } else {
-    rho = parseFloat(state.formValue);
+    rho = parseLocaleNumber(state.formValue);
     if(isNaN(rho) || rho<0) return;
     modo='directo';
   }
