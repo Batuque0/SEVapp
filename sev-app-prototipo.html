@@ -30,6 +30,7 @@
     --amber-dim:#5C3F14;
     --orange:#FF6A45;
     --blue:#5AA9E6;
+    --maroon:#D6566A;
     --radius:10px;
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
@@ -175,6 +176,7 @@
     --amber-dim:#F4DEC0;
     --orange:#7A1E06;
     --blue:#073762;
+    --maroon:#6B1220;
   }
   #app.theme-field .chart-zone{ background:var(--bg-base); }
   #app.theme-field .drawer-row{ border-bottom-color:var(--line-soft); }
@@ -278,8 +280,10 @@ function crc32(bytes){
   return (crc ^ 0xFFFFFFFF) >>> 0;
 }
 function dosDateTime(d){
-  const time = ((d.getHours()&0x1F)<<11) | ((d.getMinutes()&0x3F)<<5) | ((Math.floor(d.getSeconds()/2))&0x1F);
-  const date = (((d.getFullYear()-1980)&0x7F)<<9) | (((d.getMonth()+1)&0xF)<<5) | (d.getDate()&0x1F);
+  const p = arParts(d);
+  const h=+p.hour, mi=+p.minute, se=+p.second, y=+p.year, mo=+p.month, da=+p.day;
+  const time = ((h&0x1F)<<11) | ((mi&0x3F)<<5) | ((Math.floor(se/2))&0x1F);
+  const date = (((y-1980)&0x7F)<<9) | ((mo&0xF)<<5) | (da&0x1F);
   return {time, date};
 }
 function buildZip(files){
@@ -353,9 +357,85 @@ function exportAllZip(){
   const blob = buildZip(files);
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url; a.download = 'datos_sevapp_backup_' + new Date().toISOString().slice(0,10) + '.zip';
+  a.href = url; a.download = 'datos_sevapp_backup_' + arDateISO(new Date()) + '.zip';
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+/* ===================== IMPORTAR BACKUP (.zip) =====================
+   Lee un .zip generado por "Exportar backup completo" (método "store",
+   sin compresión — el único que produce esta app) y restaura los SEV
+   guardados adentro, tanto en memoria como en IndexedDB. Útil para pasar
+   los datos a otro celular o recuperarlos después de actualizar la app. */
+function readZipStore(buf){
+  const view = new DataView(buf);
+  const bytes = new Uint8Array(buf);
+  let eocd = -1;
+  for(let i=bytes.length-22; i>=0; i--){
+    if(view.getUint32(i, true) === 0x06054b50){ eocd = i; break; }
+  }
+  if(eocd === -1) throw new Error('No parece un archivo .zip válido');
+  const entryCount = view.getUint16(eocd+10, true);
+  const centralDirOffset = view.getUint32(eocd+16, true);
+
+  const entries = [];
+  let ptr = centralDirOffset;
+  const dec = new TextDecoder('utf-8');
+  for(let i=0; i<entryCount; i++){
+    if(view.getUint32(ptr, true) !== 0x02014b50) break;
+    const method = view.getUint16(ptr+10, true);
+    const compSize = view.getUint32(ptr+20, true);
+    const fnLen = view.getUint16(ptr+28, true);
+    const extraLen = view.getUint16(ptr+30, true);
+    const commentLen = view.getUint16(ptr+32, true);
+    const localOffset = view.getUint32(ptr+42, true);
+    const name = dec.decode(bytes.slice(ptr+46, ptr+46+fnLen));
+
+    const lFnLen = view.getUint16(localOffset+26, true);
+    const lExtraLen = view.getUint16(localOffset+28, true);
+    const dataStart = localOffset + 30 + lFnLen + lExtraLen;
+    const dataBytes = bytes.slice(dataStart, dataStart+compSize);
+
+    entries.push({ name, method, bytes: dataBytes });
+    ptr += 46 + fnLen + extraLen + commentLen;
+  }
+  return entries;
+}
+
+async function importBackupFromFile(file){
+  let buf, entries;
+  try{
+    buf = await file.arrayBuffer();
+    entries = readZipStore(buf);
+  } catch(e){
+    alert('No se pudo leer el archivo. ¿Es un .zip exportado por esta misma app (botón "Exportar backup completo")?');
+    return;
+  }
+  if(entries.some(e=>e.method!==0)){
+    if(!confirm('Parte del archivo parece haber sido comprimida de otra forma (por ejemplo, si se volvió a recomprimir el .zip) y podría no importarse bien. ¿Continuar de todas formas?')) return;
+  }
+  const dec = new TextDecoder('utf-8');
+  const jsonEntries = entries.filter(e=> e.name.startsWith('datos_sevapp/') && e.name.endsWith('.json'));
+  if(jsonEntries.length===0){
+    alert('El .zip no tiene sondeos para importar. ¿Es un backup generado por "Exportar backup completo"?');
+    return;
+  }
+  if(state.sevs.length>0){
+    if(!confirm(`Vas a importar ${jsonEntries.length} sondeo(s). Si alguno ya existe en este celular (mismo SEV), se va a reemplazar con la versión del backup. ¿Continuar?`)) return;
+  }
+  let count = 0;
+  for(const entry of jsonEntries){
+    try{
+      const sev = JSON.parse(dec.decode(entry.bytes));
+      if(!sev || !sev.id || !sev.lecturas) continue;
+      const idx = state.sevs.findIndex(s=>s.id===sev.id);
+      if(idx>=0) state.sevs[idx] = sev; else state.sevs.push(sev);
+      await dbPutSev(sev);
+      count++;
+    } catch(e){ console.warn('No se pudo importar', entry.name, e); }
+  }
+  alert(count + ' sondeo(s) importado(s) correctamente.');
+  render();
 }
 
 function buildSteps(){
@@ -380,6 +460,8 @@ function parseLocaleNumber(str){
 }
 
 const PI_15 = 3.141592653589793; // 15 decimales, igual a Math.PI en JS (doble precisión)
+const HOME_ICON_SVG = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10v9.3a1 1 0 0 0 1 1H9.3a1 1 0 0 0 1-1V15a1 1 0 0 1 1-1h1.4a1 1 0 0 1 1 1v4.3a1 1 0 0 0 1 1H18.5a1 1 0 0 0 1-1V10"/></svg>`;
+
 function kFactor(ab2, mn2){
   return PI_15 * (ab2*ab2 - mn2*mn2) / (2*mn2);
 }
@@ -399,16 +481,43 @@ let state = {
   newSevDraft:null
 };
 
+// Fuerza siempre horario de Argentina (UTC-3, sin horario de verano desde 2009)
+// para que el timestamp guardado no dependa de cómo esté configurado el celular.
+const AR_TZ = 'America/Argentina/Buenos_Aires';
+function arParts(date){
+  const fmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: AR_TZ, year:'numeric', month:'2-digit', day:'2-digit',
+    hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false
+  });
+  const parts = {};
+  fmt.formatToParts(date).forEach(p=>{ if(p.type!=='literal') parts[p.type]=p.value; });
+  return parts;
+}
+function arDateISO(date){ const p=arParts(date); return `${p.year}-${p.month}-${p.day}`; }
+function arDisplayDateTime(date){ const p=arParts(date); return `${p.day}/${p.month} ${p.hour}:${p.minute}`; }
+function arDisplayTime(date){ const p=arParts(date); return `${p.hour}:${p.minute}`; }
+function arISO(date){ const p=arParts(date); return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}-03:00`; }
+
 function uid(){ return 's'+Math.random().toString(36).slice(2,9); }
 function fmtCoord(v){ return v.toFixed(5); }
 function nowStr(){
-  const d = new Date();
-  return d.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit'}) + ' ' + d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'});
+  return arDisplayDateTime(new Date());
 }
 
 function currentSev(){ return state.sevs.find(s=>s.id===state.currentSevId); }
 
 function lecturaKey(ab2,mn2){ return ab2+'_'+mn2; }
+
+// Cuánto falta para el próximo AB/2 (0 si el próximo paso es el mismo punto,
+// con otro MN — caso de empalme).
+function nextStepHint(sev){
+  const next = STEPS[sev.stepIndex+1];
+  const actual = STEPS[sev.stepIndex];
+  if(!next) return null;
+  const diff = next.ab2 - actual.ab2;
+  if(diff === 0) return `Prox.: mismo punto (MN ${next.mn2})`;
+  return `Prox. ${diff}m`;
+}
 
 function sevProgress(sev){
   const total = STEPS.length;
@@ -456,6 +565,8 @@ function renderHome(){
         <span class="chev">›</span>
       </button>
       ${state.sevs.length>0 ? `<button class="btn-ghost" id="btnExportAll" style="margin-top:6px;">⭳ Exportar backup completo (.zip)</button>` : ''}
+      <button class="btn-ghost" id="btnImportAll" style="margin-top:6px;">⭱ Importar backup (.zip)</button>
+      <input type="file" id="importFileInput" accept=".zip" style="display:none;">
     </div>
     <div class="home-footer">ARES II · MODO CAMPO</div>
   `;
@@ -463,6 +574,13 @@ function renderHome(){
   el.querySelector('#btnContinuar').onclick = ()=>{ state.screen='list'; render(); };
   const exportBtn = el.querySelector('#btnExportAll');
   if(exportBtn) exportBtn.onclick = ()=> exportAllZip();
+  const importInput = el.querySelector('#importFileInput');
+  el.querySelector('#btnImportAll').onclick = ()=> importInput.click();
+  importInput.onchange = (e)=>{
+    const file = e.target.files[0];
+    if(file) importBackupFromFile(file);
+    importInput.value = '';
+  };
   return el;
 }
 
@@ -541,7 +659,7 @@ function startNewSev(){
     nombre: 'SEV-' + String(count).padStart(2,'0'),
     gps, historialGps:[gps],
     fecha: nowStr(),
-    fechaISO: now.toISOString().slice(0,10), // AAAA-MM-DD, para nombrar archivos exportados
+    fechaISO: arDateISO(now), // AAAA-MM-DD en hora de Argentina, para nombrar archivos exportados
     createdAt: now.getTime(),
     lecturas: {},
     stepIndex: 0
@@ -571,7 +689,7 @@ function renderNew(){
             <div class="gps-icon">📍</div>
             <div>
               <div class="gps-coords">${fmtCoord(d.gps.lat)}, ${fmtCoord(d.gps.lon)}</div>
-              <div class="gps-precision">± ${d.gps.prec} m · capturado ${new Date(d.gps.ts).toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})}</div>
+              <div class="gps-precision">± ${d.gps.prec} m · capturado ${arDisplayTime(new Date(d.gps.ts))}</div>
             </div>
           </div>
           <button class="btn-ghost" id="remedir">↻ Re-medir posición</button>
@@ -661,7 +779,10 @@ function renderCarga(){
           <div class="step-val"><div class="lab">AB/2 (m)</div><div class="num">${step.ab2}</div></div>
           <div class="step-val"><div class="lab">MN/2 (m)</div><div class="num mn">${step.mn2}${step.splice?`<span class="splice-flag">EMPALME</span>`:''}</div></div>
         </div>
-        <div class="step-progress">PASO ${sev.stepIndex+1}/${STEPS.length}</div>
+        <div style="text-align:right;">
+          <div class="step-progress">PASO ${sev.stepIndex+1}/${STEPS.length}</div>
+          ${nextStepHint(sev) ? `<div class="step-progress" style="margin-top:2px; color:var(--maroon); font-weight:700; font-size:12px;">${nextStepHint(sev)}</div>` : ''}
+        </div>
       </div>
 
       <div style="display:flex; gap:10px; align-items:center;">
@@ -812,7 +933,9 @@ function renderDrawerContent(sev){
   const p = sevProgress(sev);
   const head = document.createElement('div');
   head.className='drawer-head';
-  head.innerHTML = `<h3>${sev.nombre}</h3><p>${p.done}/${p.total} puntos · ${fmtCoord(sev.gps.lat)}, ${fmtCoord(sev.gps.lon)}</p>`;
+  head.innerHTML = `
+    <button class="icon-btn" id="goHome" style="margin-bottom:12px; width:auto; padding:0 12px; gap:6px;" title="Volver al inicio">${HOME_ICON_SVG}<span style="font-size:12px; font-weight:700;">Inicio</span></button>
+    <h3>${sev.nombre}</h3><p>${p.done}/${p.total} puntos · ${fmtCoord(sev.gps.lat)}, ${fmtCoord(sev.gps.lon)}</p>`;
   const list = document.createElement('div');
   list.className='drawer-list';
   STEPS.forEach((st,i)=>{
@@ -837,6 +960,8 @@ function renderDrawerContent(sev){
   setTimeout(()=>{
     const csvBtn = foot.querySelector('#exportCsvBtn'); if(csvBtn) csvBtn.onclick = ()=> exportCsv(sev);
     const jsonBtn = foot.querySelector('#exportJsonBtn'); if(jsonBtn) jsonBtn.onclick = ()=> exportJson(sev);
+    const homeBtn = head.querySelector('#goHome');
+    if(homeBtn) homeBtn.onclick = ()=>{ state.drawerOpen=false; state.screen='home'; render(); };
   },0);
   return wrap;
 }
@@ -854,7 +979,7 @@ function sevToRows(sev){
   const rows = [];
   STEPS.forEach(st=>{
     const lec = sev.lecturas[lecturaKey(st.ab2,st.mn2)];
-    if(lec) rows.push([st.ab2, st.mn2, lec.resistividad.toFixed(3), lec.modo, lec.I??'', lec.dV??'', sev.gps.lat.toFixed(6), sev.gps.lon.toFixed(6), new Date(lec.ts).toISOString()]);
+    if(lec) rows.push([st.ab2, st.mn2, lec.resistividad.toFixed(3), lec.modo, lec.I??'', lec.dV??'', sev.gps.lat.toFixed(6), sev.gps.lon.toFixed(6), arISO(new Date(lec.ts))]);
   });
   return rows;
 }
