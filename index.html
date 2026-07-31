@@ -104,7 +104,7 @@
   .carga-topbar .gps-mini .d{ width:6px;height:6px;border-radius:50%; background:var(--green);}
 
   .chart-zone{ flex:1 1 auto; min-height:0; position:relative; background:radial-gradient(circle at 30% 0%, #182124 0%, var(--bg-base) 70%); }
-  .chart-legend{ position:absolute; top:8px; left:12px; display:flex; gap:12px; font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--text-secondary); z-index:2;}
+  .chart-legend{ position:absolute; top:8px; left:12px; right:12px; display:flex; gap:12px; font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--text-secondary); z-index:2;}
   .chart-legend span{ display:flex; align-items:center; gap:5px;}
   .chart-legend i{ width:9px;height:2px; display:inline-block;}
 
@@ -132,6 +132,10 @@
   .manual-computed b{ color:var(--green); font-size:14px; }
 
   .toggle-manual{ width:40px; height:40px; border-radius:8px; border:1px solid var(--line); background:var(--bg-panel); color:var(--text-secondary); display:flex; align-items:center; justify-content:center; cursor:pointer; flex-shrink:0; font-size:16px;}
+  .splice-toggle{ height:38px; padding:0 12px; border-radius:8px; border:1px solid var(--line); background:var(--bg-panel-2); color:var(--text-secondary); display:flex; align-items:center; gap:6px; cursor:pointer; font-family:'JetBrains Mono',monospace; font-size:11.5px; font-weight:700; letter-spacing:0.5px;}
+  .splice-toggle .dot{ width:8px; height:8px; border-radius:50%; background:var(--text-dim); flex-shrink:0;}
+  .splice-toggle.on{ background:var(--blue); border-color:var(--blue); color:#EAF3FC; }
+  .splice-toggle.on .dot{ background:#EAF3FC; }
   .toggle-manual.on{ background:var(--orange); border-color:var(--orange); color:#241008; }
 
   .confirm-btn{ width:46px; height:46px; border-radius:50%; border:none; background:var(--line); color:var(--text-dim); display:flex; align-items:center; justify-content:center; cursor:pointer; flex-shrink:0; font-size:20px; transition:background .15s, color .15s;}
@@ -470,6 +474,7 @@ function kFactor(ab2, mn2){
 let state = {
   screen:'home',           // home | list | new | carga
   theme:'dark',             // dark | field (alto contraste para sol)
+  spliceMode:false,          // false = ver datos tal cual se tomaron, true = ver curva empalmada
   sevs: [],                 // { id, nombre, gps, historialGps, fecha, lecturas:{}, stepIndex }
   currentSevId: null,
   drawerOpen:false,
@@ -761,7 +766,12 @@ function renderCarga(){
 
   el.innerHTML = `
     <div class="topbar carga-topbar">
-      <div class="icon-btn" id="openDrawer">☰</div>
+      <div style="display:flex; gap:6px;">
+        <div class="icon-btn" id="openDrawer">☰</div>
+        <div class="splice-toggle ${state.spliceMode?'on':''}" id="spliceToggle" title="Ver datos tal cual se tomaron, o la curva empalmada">
+          <span class="dot"></span>EMPALME
+        </div>
+      </div>
       <div class="topbar-title" style="text-align:center;">${sev.nombre}<small>${p.done}/${p.total} puntos cargados</small></div>
       <div class="icon-btn" id="themeToggle" title="${state.theme==='field'?'Volver a modo oscuro':'Modo campo (alto contraste)'}">${state.theme==='field'?'🌙':'☀'}</div>
     </div>
@@ -770,6 +780,7 @@ function renderCarga(){
         <span style="color:${mnColors()[0.5]}">● MN 0.5</span>
         <span style="color:${mnColors()[5]}">■ MN 5</span>
         <span style="color:${mnColors()[20]}">▲ MN 20</span>
+        <span style="margin-left:auto; color:${state.spliceMode?'var(--blue)':'var(--text-dim)'};">${state.spliceMode?'EMPALMADO':'DATOS CRUDOS'}</span>
       </div>
       <div id="chartHolder" style="width:100%;height:100%;"></div>
     </div>
@@ -873,6 +884,7 @@ function renderCarga(){
   drawer.appendChild(renderDrawerContent(sev));
   if(state.drawerOpen){ drawer.classList.add('open'); backdrop.classList.add('open'); }
   el.querySelector('#openDrawer').onclick = ()=>{ state.drawerOpen=true; render(); };
+  el.querySelector('#spliceToggle').onclick = ()=>{ state.spliceMode = !state.spliceMode; render(); };
   backdrop.onclick = ()=>{ state.drawerOpen=false; render(); };
 
   // chart
@@ -887,15 +899,42 @@ function updateConfirmState(){
   // en este prototipo simplificamos re-renderizando completo salvo mientras se tipea.
 }
 
+// Técnica clásica de empalme: en los puntos donde hay dos lecturas (mismo AB/2,
+// distinto MN), se calcula la razón entre ambas y se desplaza verticalmente
+// todo el tramo siguiente para que la curva quede continua. No modifica los
+// datos guardados — solo afecta cómo se dibuja el gráfico.
+function computeSpliceFactors(sev){
+  const order = [0.5, 5, 20];
+  const factors = { 0.5:1, 5:1, 20:1 };
+  for(let i=1; i<order.length; i++){
+    const prevMn = order[i-1], curMn = order[i];
+    const overlapAb2s = STEPS.filter(st=>st.mn2===curMn && st.splice).map(st=>st.ab2)
+      .filter(ab2 => STEPS.some(st=>st.ab2===ab2 && st.mn2===prevMn));
+    const ratios = [];
+    overlapAb2s.forEach(ab2=>{
+      const prevLec = sev.lecturas[lecturaKey(ab2, prevMn)];
+      const curLec = sev.lecturas[lecturaKey(ab2, curMn)];
+      if(prevLec && curLec && curLec.resistividad>0){
+        ratios.push((prevLec.resistividad * factors[prevMn]) / curLec.resistividad);
+      }
+    });
+    factors[curMn] = ratios.length ? (ratios.reduce((a,b)=>a+b,0)/ratios.length) : factors[prevMn];
+  }
+  return factors;
+}
+
 function getChartSeries(){
   const series = [];
   const ids = state.overlayIds.length>0 ? Array.from(new Set([state.currentSevId, ...state.overlayIds])) : [state.currentSevId];
   ids.forEach((id,i)=>{
     const sev = state.sevs.find(s=>s.id===id);
     if(!sev) return;
+    const factors = state.spliceMode ? computeSpliceFactors(sev) : null;
     const points = STEPS.map(st=>{
       const lec = sev.lecturas[lecturaKey(st.ab2, st.mn2)];
-      return lec ? {ab2:st.ab2, mn2:st.mn2, rho:lec.resistividad} : null;
+      if(!lec) return null;
+      const rho = factors ? lec.resistividad * factors[st.mn2] : lec.resistividad;
+      return {ab2:st.ab2, mn2:st.mn2, rho};
     }).filter(Boolean);
     series.push({ id, nombre: sev.nombre, points, dim: i>0 });
   });
