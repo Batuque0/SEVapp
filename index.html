@@ -30,6 +30,7 @@
     --amber-dim:#5C3F14;
     --orange:#FF6A45;
     --blue:#5AA9E6;
+    --maroon:#D6566A;
     --radius:10px;
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
@@ -175,6 +176,7 @@
     --amber-dim:#F4DEC0;
     --orange:#7A1E06;
     --blue:#073762;
+    --maroon:#6B1220;
   }
   #app.theme-field .chart-zone{ background:var(--bg-base); }
   #app.theme-field .drawer-row{ border-bottom-color:var(--line-soft); }
@@ -412,6 +414,17 @@ function currentSev(){ return state.sevs.find(s=>s.id===state.currentSevId); }
 
 function lecturaKey(ab2,mn2){ return ab2+'_'+mn2; }
 
+// Cuánto falta para el próximo AB/2 (0 si el próximo paso es el mismo punto,
+// con otro MN — caso de empalme).
+function nextStepHint(sev){
+  const next = STEPS[sev.stepIndex+1];
+  const actual = STEPS[sev.stepIndex];
+  if(!next) return null;
+  const diff = next.ab2 - actual.ab2;
+  if(diff === 0) return `Prox.: mismo punto (MN ${next.mn2})`;
+  return `Prox. ${diff}m`;
+}
+
 function sevProgress(sev){
   const total = STEPS.length;
   const done = Object.keys(sev.lecturas).length;
@@ -645,10 +658,7 @@ function renderCarga(){
 
   el.innerHTML = `
     <div class="topbar carga-topbar">
-      <div style="display:flex; gap:6px;">
-        <div class="icon-btn" id="goHomeTop" title="Volver al inicio" style="width:auto; padding:0 10px; gap:6px;">${HOME_ICON_SVG}<span style="font-size:11.5px; font-weight:700;">Inicio</span></div>
-        <div class="icon-btn" id="openDrawer">☰</div>
-      </div>
+      <div class="icon-btn" id="openDrawer">☰</div>
       <div class="topbar-title" style="text-align:center;">${sev.nombre}<small>${p.done}/${p.total} puntos cargados</small></div>
       <div class="icon-btn" id="themeToggle" title="${state.theme==='field'?'Volver a modo oscuro':'Modo campo (alto contraste)'}">${state.theme==='field'?'🌙':'☀'}</div>
     </div>
@@ -666,7 +676,10 @@ function renderCarga(){
           <div class="step-val"><div class="lab">AB/2 (m)</div><div class="num">${step.ab2}</div></div>
           <div class="step-val"><div class="lab">MN/2 (m)</div><div class="num mn">${step.mn2}${step.splice?`<span class="splice-flag">EMPALME</span>`:''}</div></div>
         </div>
-        <div class="step-progress">PASO ${sev.stepIndex+1}/${STEPS.length}</div>
+        <div style="text-align:right;">
+          <div class="step-progress">PASO ${sev.stepIndex+1}/${STEPS.length}</div>
+          ${nextStepHint(sev) ? `<div class="step-progress" style="margin-top:2px; color:var(--maroon); font-weight:700; font-size:12px;">${nextStepHint(sev)}</div>` : ''}
+        </div>
       </div>
 
       <div style="display:flex; gap:10px; align-items:center;">
@@ -757,7 +770,6 @@ function renderCarga(){
   drawer.appendChild(renderDrawerContent(sev));
   if(state.drawerOpen){ drawer.classList.add('open'); backdrop.classList.add('open'); }
   el.querySelector('#openDrawer').onclick = ()=>{ state.drawerOpen=true; render(); };
-  el.querySelector('#goHomeTop').onclick = ()=>{ state.screen='home'; render(); };
   backdrop.onclick = ()=>{ state.drawerOpen=false; render(); };
 
   // chart
