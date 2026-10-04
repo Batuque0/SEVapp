@@ -56,7 +56,7 @@ La forma más simple y gratuita es GitHub Pages:
 3. Subí estos 5 elementos (index.html, manifest.json, service-worker.js,
    la carpeta icons/) a la raíz del repositorio.
 4. En el repositorio: Settings → Pages → Source: "main" branch, carpeta "/ (root)".
-5. GitHub te da una URL tipo: https://tuusuario.github.io/sev-app/
+5. GitHub te da una URL tipo: https://batuque0.github.io/sev-app/
 6. Abrí esa URL en el celular (Chrome en Android, Safari en iPhone).
 7. Android: aparece un aviso para "Agregar a pantalla de inicio" (o lo hacés
    manualmente desde el menú ⋮ → Instalar app / Agregar a pantalla principal).
