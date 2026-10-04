@@ -9,7 +9,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="SEV Campo">
+<meta name="apple-mobile-web-app-title" content="SEVApp">
 <link rel="apple-touch-icon" href="./icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -336,6 +336,79 @@ function buildZip(files){
   return new Blob([...localParts, ...centralParts, new Uint8Array(end.buffer)], {type:'application/zip'});
 }
 
+// Mapea cada MN/2 al par de electrodos de potencial fijos del Ares II
+// (P1/P2 para el primer MN usado, P3/P4 para el segundo, P5/P6 para el tercero),
+// tal como aparece en los archivos .ves reales exportados por el equipo.
+const VES_MN_ELECTRODES = { 0.5:['P1','P2'], 5:['P3','P4'], 20:['P5','P6'] };
+const VES_COLUMNS = ['P[m]','S[m]','C1[m]','C2[m]','P1[m]','P2[m]','Pn','Pn+1','Array','Uout[V]','I[mA]','U[mV]','EP[mV]','AppRes[Ohmm]','St-dev[%]','Note','Lat','Lon','Alt','Time','Satellites','Dilution'];
+
+// Genera el .ves en el mismo formato (encabezado + tabla separada por TAB,
+// fin de línea \r\n) que usan los equipos GF Instruments / Ares II, para que
+// se pueda abrir con el mismo software que procesa los SEV del equipo.
+// Los campos que son parámetros reales de adquisición del equipo (potencia de
+// salida, largo de pulso, filtrado, etc.) NO los conocemos desde la app —
+// se dejan en blanco en vez de inventar un valor.
+function sevToVes(sev){
+  const created = new Date(sev.createdAt || Date.now());
+  const p = arParts(created);
+  const dateStr = `${+p.day}/${+p.month}/${p.year}`;
+  const timeStr = `${p.hour}:${p.minute}:${p.second}`;
+
+  const presentes = STEPS.filter(st=> sev.lecturas[lecturaKey(st.ab2, st.mn2)]);
+  const maxAb2 = presentes.length ? Math.max(...presentes.map(s=>s.ab2)) : 0;
+  const mnFull = [...new Set(presentes.map(s=> s.mn2*2))].sort((a,b)=>a-b);
+  const metodo = `Schl ${maxAb2} MN ${mnFull.join('-')}`;
+  const locStr = sev.gps ? `${sev.gps.lat.toFixed(6)}, ${sev.gps.lon.toFixed(6)}` : '';
+
+  const lines = [];
+  lines.push(`Device: App de Campo (carga en campo, no es exportación directa del equipo)`);
+  lines.push(`Time: ${timeStr}`);
+  lines.push(`Date: ${dateStr}`);
+  lines.push(`Locality: ${locStr}`);
+  lines.push(`Operator: `);
+  lines.push(`Note: `);
+  lines.push(`Method: ${metodo}`);
+  lines.push(`Profile: 0`);
+  lines.push(`P-step: `);
+  lines.push(`S-step: `);
+  lines.push(`Pulse length: `);
+  lines.push(`Measurement mode: `);
+  lines.push(`Filtering: `);
+  lines.push(`Output power: `);
+  lines.push(`Minimal potential: `);
+  lines.push(`Maximal error: `);
+  lines.push(`Stacking: `);
+  lines.push(`Measured data:`);
+  lines.push(VES_COLUMNS.join('\t'));
+
+  STEPS.forEach(st=>{
+    const lec = sev.lecturas[lecturaKey(st.ab2, st.mn2)];
+    if(!lec) return;
+    const [pnA, pnB] = VES_MN_ELECTRODES[st.mn2] || ['',''];
+    const I = (lec.modo==='manual' && lec.I!=null) ? lec.I : '';
+    const U = (lec.modo==='manual' && lec.dV!=null) ? Math.abs(lec.dV) : '';
+    const lt = arParts(new Date(lec.ts));
+    const row = [
+      0, 0,
+      -st.ab2, st.ab2,
+      -st.mn2, st.mn2,
+      pnA, pnB,
+      'WS',
+      '', I, U, '',
+      lec.resistividad.toFixed(3),
+      '', '',
+      sev.gps ? sev.gps.lat.toFixed(6) : '',
+      sev.gps ? sev.gps.lon.toFixed(6) : '',
+      '',
+      `${lt.hour}:${lt.minute}:${lt.second}`,
+      '', ''
+    ];
+    lines.push(row.join('\t'));
+  });
+
+  return lines.join('\r\n') + '\r\n';
+}
+
 function exportAllZip(){
   if(state.sevs.length===0){ alert('Todavía no hay sondeos guardados.'); return; }
   const files = [];
@@ -345,6 +418,7 @@ function exportAllZip(){
     const rows = [['AB/2','MN/2','Resistividad_Ohm_m','Modo','Corriente_mA','DeltaV_mV','Lat','Lon','Timestamp'], ...sevToRows(sev)];
     files.push({ name: folder + sev.nombre + '.csv', content: rows.map(r=>r.join(',')).join('\n') });
     files.push({ name: folder + sev.nombre + '.json', content: JSON.stringify(sev, null, 2) });
+    files.push({ name: folder + sev.nombre + '.ves', content: sevToVes(sev) });
     resumen.push([sev.nombre, sev.fecha, sev.gps.lat.toFixed(6), sev.gps.lon.toFixed(6), Object.keys(sev.lecturas).length]);
   });
   files.push({ name: 'datos_sevapp/resumen.csv', content: resumen.map(r=>r.join(',')).join('\n') });
@@ -588,6 +662,11 @@ function render(){
 function renderHome(){
   const el = document.createElement('div');
   el.className = 'screen home';
+  
+  // SVG vectoriales ultra livianos
+  const iconDownload = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px; margin-right:6px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`;
+  const iconUpload = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px; margin-right:6px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`;
+
   el.innerHTML = `
     <div class="home-brand">
       <div class="mark">SEV · SCHLUMBERGER</div>
@@ -603,8 +682,8 @@ function renderHome(){
         <div>Continuar SEV<small>${state.sevs.length} guardado${state.sevs.length===1?'':'s'} en este dispositivo</small></div>
         <span class="chev">›</span>
       </button>
-      ${state.sevs.length>0 ? `<button class="btn-ghost" id="btnExportAll" style="margin-top:6px;">⭳ Exportar backup completo (.zip)</button>` : ''}
-      <button class="btn-ghost" id="btnImportAll" style="margin-top:6px;">⭱ Importar backup (.zip)</button>
+      ${state.sevs.length>0 ? `<button class="btn-ghost" id="btnExportAll" style="margin-top:6px;">${iconDownload}Exportar backup completo (.zip)</button>` : ''}
+      <button class="btn-ghost" id="btnImportAll" style="margin-top:6px;">${iconUpload}Importar backup (.zip)</button>
       <input type="file" id="importFileInput" accept=".zip" style="display:none;">
     </div>
     <div class="home-footer">ARES II · MODO CAMPO</div>
