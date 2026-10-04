@@ -506,7 +506,7 @@ function sevProgress(sev){
   return {done, total, pct: Math.round(done/total*100)};
 }
 
-/* ===================== GPS REAL CON LOCALIDAD ===================== */
+/* ===================== GPS REAL SIN CACHÉ (iOS Fix) ===================== */
 function getRealGps() {
   return new Promise((resolve) => {
     if (!navigator.geolocation) {
@@ -516,17 +516,30 @@ function getRealGps() {
 
     const opciones = {
       enableHighAccuracy: true,
-      timeout: 10000,
+      timeout: 12000,
       maximumAge: 0
     };
 
-    navigator.geolocation.getCurrentPosition(
+    let watchId = null;
+
+    // Timer de seguridad por si el GPS tarda demasiado
+    const timer = setTimeout(() => {
+      if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+      alert("Tiempo de espera GPS agotado. Reintentá en un lugar a cielo abierto.");
+      resolve({ lat: -31.5375, lon: -68.5364, prec: 99, localidad: "Sin señal GPS", ts: Date.now() });
+    }, 13000);
+
+    // watchPosition fuerza al chip de iOS a encenderse y buscar satélites activos
+    watchId = navigator.geolocation.watchPosition(
       async (pos) => {
+        // Una vez que obtenemos la medición activa, cancelamos el rastreo continuo
+        navigator.geolocation.clearWatch(watchId);
+        clearTimeout(timer);
+
         const lat = pos.coords.latitude;
         const lon = pos.coords.longitude;
         let localidad = "Sin datos de red";
 
-        // Consulta liviana a OpenStreetMap para obtener localidad/provincia
         try {
           const response = await fetch(
             `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=10`
@@ -534,7 +547,6 @@ function getRealGps() {
           if (response.ok) {
             const data = await response.json();
             const addr = data.address || {};
-            // Busca la ciudad, pueblo o departamento y la provincia
             const ciudad = addr.city || addr.town || addr.village || addr.county || "";
             const provincia = addr.state || "";
             localidad = [ciudad, provincia].filter(Boolean).join(", ") || "Ubicación detectada";
@@ -548,11 +560,13 @@ function getRealGps() {
           lon: lon,
           prec: Math.round(pos.coords.accuracy || 0),
           localidad: localidad,
-          ts: pos.timestamp || Date.now()
+          ts: Date.now() // Timestamp fresco de la medición
         });
       },
       (err) => {
-        alert("No se pudo obtener ubicación GPS (" + err.message + ").");
+        navigator.geolocation.clearWatch(watchId);
+        clearTimeout(timer);
+        alert("Error de GPS (" + err.message + "). Verificá la localización en Ajustes.");
         resolve({ lat: -31.5375, lon: -68.5364, prec: 99, localidad: "Sin señal GPS", ts: Date.now() });
       },
       opciones
