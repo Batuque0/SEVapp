@@ -104,7 +104,7 @@
   .carga-topbar .gps-mini .d{ width:6px;height:6px;border-radius:50%; background:var(--green);}
 
   .chart-zone{ flex:1 1 auto; min-height:0; position:relative; background:radial-gradient(circle at 30% 0%, #182124 0%, var(--bg-base) 70%); }
-  .chart-legend{ position:absolute; top:8px; left:12px; right:12px; display:flex; gap:12px; font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--text-secondary); z-index:2;}
+  .chart-legend{ position:absolute; top:8px; left:12px; display:flex; gap:12px; font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--text-secondary); z-index:2;}
   .chart-legend span{ display:flex; align-items:center; gap:5px;}
   .chart-legend i{ width:9px;height:2px; display:inline-block;}
 
@@ -132,10 +132,6 @@
   .manual-computed b{ color:var(--green); font-size:14px; }
 
   .toggle-manual{ width:40px; height:40px; border-radius:8px; border:1px solid var(--line); background:var(--bg-panel); color:var(--text-secondary); display:flex; align-items:center; justify-content:center; cursor:pointer; flex-shrink:0; font-size:16px;}
-  .splice-toggle{ height:38px; padding:0 12px; border-radius:8px; border:1px solid var(--line); background:var(--bg-panel-2); color:var(--text-secondary); display:flex; align-items:center; gap:6px; cursor:pointer; font-family:'JetBrains Mono',monospace; font-size:11.5px; font-weight:700; letter-spacing:0.5px;}
-  .splice-toggle .dot{ width:8px; height:8px; border-radius:50%; background:var(--text-dim); flex-shrink:0;}
-  .splice-toggle.on{ background:var(--blue); border-color:var(--blue); color:#EAF3FC; }
-  .splice-toggle.on .dot{ background:#EAF3FC; }
   .toggle-manual.on{ background:var(--orange); border-color:var(--orange); color:#241008; }
 
   .confirm-btn{ width:46px; height:46px; border-radius:50%; border:none; background:var(--line); color:var(--text-dim); display:flex; align-items:center; justify-content:center; cursor:pointer; flex-shrink:0; font-size:20px; transition:background .15s, color .15s;}
@@ -204,8 +200,6 @@
 
 <script>
 /* ===================== ALMACENAMIENTO OFFLINE (IndexedDB) ===================== */
-// Esto es lo que hace que los datos sobrevivan a cerrar la app / apagar el celular.
-// No se ve como "carpeta" pero cumple la misma función: guardado local persistente.
 const DB_NAME = 'sevapp_db';
 const DB_VERSION = 1;
 const STORE = 'sevs';
@@ -250,7 +244,6 @@ async function dbDelete(id){
     tx.onerror = ()=> reject(tx.error);
   });
 }
-// Guarda el SEV activo tanto en el estado en memoria como en IndexedDB.
 function persist(sev){ if(sev) dbPut(sev); }
 
 /* ===================== DATOS BASE ===================== */
@@ -270,10 +263,7 @@ function drawMarker(shape, x, y, r, color, opacity){
   return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r}" fill="${color}" opacity="${opacity}"/>`;
 }
 
-/* ===================== ZIP (sin dependencias externas) =====================
-   Arma un .zip real (método "store", sin compresión) en el propio navegador,
-   sin necesitar internet ni librerías externas — clave para que el backup
-   funcione aunque no haya señal en el campo. */
+/* ===================== ZIP ===================== */
 function crc32(bytes){
   let crc = 0xFFFFFFFF;
   for(let i=0;i<bytes.length;i++){
@@ -366,11 +356,6 @@ function exportAllZip(){
   URL.revokeObjectURL(url);
 }
 
-/* ===================== IMPORTAR BACKUP (.zip) =====================
-   Lee un .zip generado por "Exportar backup completo" (método "store",
-   sin compresión — el único que produce esta app) y restaura los SEV
-   guardados adentro, tanto en memoria como en IndexedDB. Útil para pasar
-   los datos a otro celular o recuperarlos después de actualizar la app. */
 function readZipStore(buf){
   const view = new DataView(buf);
   const bytes = new Uint8Array(buf);
@@ -416,16 +401,16 @@ async function importBackupFromFile(file){
     return;
   }
   if(entries.some(e=>e.method!==0)){
-    if(!confirm('Parte del archivo parece haber sido comprimida de otra forma (por ejemplo, si se volvió a recomprimir el .zip) y podría no importarse bien. ¿Continuar de todas formas?')) return;
+    if(!confirm('Parte del archivo parece haber sido comprimida de otra forma y podría no importarse bien. ¿Continuar de todas formas?')) return;
   }
   const dec = new TextDecoder('utf-8');
   const jsonEntries = entries.filter(e=> e.name.startsWith('datos_sevapp/') && e.name.endsWith('.json'));
   if(jsonEntries.length===0){
-    alert('El .zip no tiene sondeos para importar. ¿Es un backup generado por "Exportar backup completo"?');
+    alert('El .zip no tiene sondeos para importar.');
     return;
   }
   if(state.sevs.length>0){
-    if(!confirm(`Vas a importar ${jsonEntries.length} sondeo(s). Si alguno ya existe en este celular (mismo SEV), se va a reemplazar con la versión del backup. ¿Continuar?`)) return;
+    if(!confirm(`Vas a importar ${jsonEntries.length} sondeo(s). Si alguno ya existe se reemplazará. ¿Continuar?`)) return;
   }
   let count = 0;
   for(const entry of jsonEntries){
@@ -434,7 +419,7 @@ async function importBackupFromFile(file){
       if(!sev || !sev.id || !sev.lecturas) continue;
       const idx = state.sevs.findIndex(s=>s.id===sev.id);
       if(idx>=0) state.sevs[idx] = sev; else state.sevs.push(sev);
-      await dbPutSev(sev);
+      await dbPut(sev);
       count++;
     } catch(e){ console.warn('No se pudo importar', entry.name, e); }
   }
@@ -455,15 +440,13 @@ function buildSteps(){
 }
 const STEPS = buildSteps();
 
-// Interpreta números escritos con coma decimal (celulares en español) o con
-// punto (por si el operario tipea con teclado en inglés) — acepta ambos.
 function parseLocaleNumber(str){
   if(str===null || str===undefined) return NaN;
   const cleaned = String(str).trim().replace(',', '.');
   return parseFloat(cleaned);
 }
 
-const PI_15 = 3.141592653589793; // 15 decimales, igual a Math.PI en JS (doble precisión)
+const PI_15 = 3.141592653589793;
 const HOME_ICON_SVG = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10v9.3a1 1 0 0 0 1 1H9.3a1 1 0 0 0 1-1V15a1 1 0 0 1 1-1h1.4a1 1 0 0 1 1 1v4.3a1 1 0 0 0 1 1H18.5a1 1 0 0 0 1-1V10"/></svg>`;
 
 function kFactor(ab2, mn2){
@@ -472,10 +455,9 @@ function kFactor(ab2, mn2){
 
 /* ===================== ESTADO ===================== */
 let state = {
-  screen:'home',           // home | list | new | carga
-  theme:'dark',             // dark | field (alto contraste para sol)
-  spliceMode:false,          // false = ver datos tal cual se tomaron, true = ver curva empalmada
-  sevs: [],                 // { id, nombre, gps, historialGps, fecha, lecturas:{}, stepIndex }
+  screen:'home',
+  theme:'dark',
+  sevs: [],
   currentSevId: null,
   drawerOpen:false,
   manualMode:false,
@@ -483,11 +465,10 @@ let state = {
   formValue:'',
   formI:'',
   formDV:'',
-  newSevDraft:null
+  newSevDraft:null,
+  loadingGps:false
 };
 
-// Fuerza siempre horario de Argentina (UTC-3, sin horario de verano desde 2009)
-// para que el timestamp guardado no dependa de cómo esté configurado el celular.
 const AR_TZ = 'America/Argentina/Buenos_Aires';
 function arParts(date){
   const fmt = new Intl.DateTimeFormat('en-CA', {
@@ -504,17 +485,12 @@ function arDisplayTime(date){ const p=arParts(date); return `${p.hour}:${p.minut
 function arISO(date){ const p=arParts(date); return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}-03:00`; }
 
 function uid(){ return 's'+Math.random().toString(36).slice(2,9); }
-function fmtCoord(v){ return v.toFixed(5); }
-function nowStr(){
-  return arDisplayDateTime(new Date());
-}
+function fmtCoord(v){ return v ? v.toFixed(5) : '0.00000'; }
+function nowStr(){ return arDisplayDateTime(new Date()); }
 
 function currentSev(){ return state.sevs.find(s=>s.id===state.currentSevId); }
-
 function lecturaKey(ab2,mn2){ return ab2+'_'+mn2; }
 
-// Cuánto falta para el próximo AB/2 (0 si el próximo paso es el mismo punto,
-// con otro MN — caso de empalme).
 function nextStepHint(sev){
   const next = STEPS[sev.stepIndex+1];
   const actual = STEPS[sev.stepIndex];
@@ -530,15 +506,59 @@ function sevProgress(sev){
   return {done, total, pct: Math.round(done/total*100)};
 }
 
-/* ===================== GPS (simulado) ===================== */
-function simulateGps(){
-  // Simula una posición realista (San Juan, AR aprox) con pequeño jitter, ya que
-  // el prototipo corre en un iframe sin permiso real de geolocalización.
-  const base = { lat:-31.5375, lon:-68.5364 };
-  const jitter = ()=> (Math.random()-0.5)*0.002;
-  return { lat: base.lat + jitter(), lon: base.lon + jitter(), prec: Math.round(4+Math.random()*8), ts: Date.now() };
-}
+/* ===================== GPS REAL CON LOCALIDAD ===================== */
+function getRealGps() {
+  return new Promise((resolve) => {
+    if (!navigator.geolocation) {
+      alert("La geolocalización no está soportada por tu navegador.");
+      return resolve({ lat: -31.5375, lon: -68.5364, prec: 99, localidad: "Desconocida", ts: Date.now() });
+    }
 
+    const opciones = {
+      enableHighAccuracy: true,
+      timeout: 10000,
+      maximumAge: 0
+    };
+
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const lat = pos.coords.latitude;
+        const lon = pos.coords.longitude;
+        let localidad = "Sin datos de red";
+
+        // Consulta liviana a OpenStreetMap para obtener localidad/provincia
+        try {
+          const response = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=10`
+          );
+          if (response.ok) {
+            const data = await response.json();
+            const addr = data.address || {};
+            // Busca la ciudad, pueblo o departamento y la provincia
+            const ciudad = addr.city || addr.town || addr.village || addr.county || "";
+            const provincia = addr.state || "";
+            localidad = [ciudad, provincia].filter(Boolean).join(", ") || "Ubicación detectada";
+          }
+        } catch (e) {
+          console.warn("No hay conexión a internet para resolver el nombre del lugar:", e);
+        }
+
+        resolve({
+          lat: lat,
+          lon: lon,
+          prec: Math.round(pos.coords.accuracy || 0),
+          localidad: localidad,
+          ts: pos.timestamp || Date.now()
+        });
+      },
+      (err) => {
+        alert("No se pudo obtener ubicación GPS (" + err.message + ").");
+        resolve({ lat: -31.5375, lon: -68.5364, prec: 99, localidad: "Sin señal GPS", ts: Date.now() });
+      },
+      opciones
+    );
+  });
+}
 /* ===================== RENDER ROOT ===================== */
 function render(){
   const app = document.getElementById('app');
@@ -562,7 +582,7 @@ function renderHome(){
     </div>
     <div class="home-actions">
       <button class="btn-major primary" id="btnNuevo">
-        <div>Nuevo SEV<small>Captura GPS y arranca la carga</small></div>
+        <div>Nuevo SEV<small>${state.loadingGps ? 'Obteniendo GPS...' : 'Captura GPS y arranca la carga'}</small></div>
         <span class="chev">›</span>
       </button>
       <button class="btn-major" id="btnContinuar">
@@ -593,7 +613,6 @@ function renderHome(){
 function renderList(){
   const el = document.createElement('div');
   el.className = 'screen';
-  const overlayMode = state.overlayIds.length>0;
   el.innerHTML = `
     <div class="topbar">
       <div class="icon-btn" id="back">‹</div>
@@ -641,7 +660,6 @@ function renderList(){
   if(state.overlayIds.length>0){
     footer.innerHTML = `<button class="btn-block accent" id="verComp">Ver comparación (${state.overlayIds.length})</button>`;
     footer.querySelector('#verComp').onclick = ()=>{
-      // abre el primero en modo carga con overlay activo
       state.currentSevId = state.overlayIds[0];
       state.screen='carga';
       syncFormFromCurrentStep();
@@ -655,8 +673,12 @@ function renderList(){
 }
 
 /* ===================== NEW SEV ===================== */
-function startNewSev(){
-  const gps = simulateGps();
+async function startNewSev(){
+  state.loadingGps = true;
+  render();
+  const gps = await getRealGps();
+  state.loadingGps = false;
+
   const count = state.sevs.length+1;
   const now = new Date();
   state.newSevDraft = {
@@ -664,7 +686,7 @@ function startNewSev(){
     nombre: 'SEV-' + String(count).padStart(2,'0'),
     gps, historialGps:[gps],
     fecha: nowStr(),
-    fechaISO: arDateISO(now), // AAAA-MM-DD en hora de Argentina, para nombrar archivos exportados
+    fechaISO: arDateISO(now),
     createdAt: now.getTime(),
     lecturas: {},
     stepIndex: 0
@@ -694,6 +716,7 @@ function renderNew(){
             <div class="gps-icon">📍</div>
             <div>
               <div class="gps-coords">${fmtCoord(d.gps.lat)}, ${fmtCoord(d.gps.lon)}</div>
+              <div class="gps-precision">📍 ${d.gps.localidad || 'Buscando lugar...'}</div>
               <div class="gps-precision">± ${d.gps.prec} m · capturado ${arDisplayTime(new Date(d.gps.ts))}</div>
             </div>
           </div>
@@ -707,9 +730,10 @@ function renderNew(){
   `;
   el.querySelector('#back').onclick = ()=>{ state.newSevDraft=null; state.screen='home'; render(); };
   el.querySelector('#nameInput').oninput = (e)=>{ d.nombre = e.target.value; };
-  el.querySelector('#remedir').onclick = ()=>{
-    d.gps = simulateGps();
-    d.historialGps.push(d.gps);
+  el.querySelector('#remedir').onclick = async ()=>{
+    const remedicion = await getRealGps();
+    d.gps = remedicion;
+    d.historialGps.push(remedicion);
     render();
   };
   el.querySelector('#empezar').onclick = ()=>{
@@ -737,9 +761,6 @@ function syncFormFromCurrentStep(){
   state.formDV = lec && lec.dV!=null ? String(lec.dV) : '';
 }
 
-// Determina si hay un valor cargado en el formulario que todavía no fue confirmado
-// (nuevo, o distinto del que ya está guardado para ese punto). Eso es lo único
-// que pinta el tilde de verde; si coincide con lo guardado (o está vacío) queda gris.
 function isFormDirty(savedLec){
   if(state.manualMode){
     const I = parseLocaleNumber(state.formI), dV = parseLocaleNumber(state.formDV);
@@ -766,12 +787,7 @@ function renderCarga(){
 
   el.innerHTML = `
     <div class="topbar carga-topbar">
-      <div style="display:flex; gap:6px;">
-        <div class="icon-btn" id="openDrawer">☰</div>
-        <div class="splice-toggle ${state.spliceMode?'on':''}" id="spliceToggle" title="Ver datos tal cual se tomaron, o la curva empalmada">
-          <span class="dot"></span>EMPALME
-        </div>
-      </div>
+      <div class="icon-btn" id="openDrawer">☰</div>
       <div class="topbar-title" style="text-align:center;">${sev.nombre}<small>${p.done}/${p.total} puntos cargados</small></div>
       <div class="icon-btn" id="themeToggle" title="${state.theme==='field'?'Volver a modo oscuro':'Modo campo (alto contraste)'}">${state.theme==='field'?'🌙':'☀'}</div>
     </div>
@@ -780,7 +796,6 @@ function renderCarga(){
         <span style="color:${mnColors()[0.5]}">● MN 0.5</span>
         <span style="color:${mnColors()[5]}">■ MN 5</span>
         <span style="color:${mnColors()[20]}">▲ MN 20</span>
-        <span style="margin-left:auto; color:${state.spliceMode?'var(--blue)':'var(--text-dim)'};">${state.spliceMode?'EMPALMADO':'DATOS CRUDOS'}</span>
       </div>
       <div id="chartHolder" style="width:100%;height:100%;"></div>
     </div>
@@ -812,9 +827,8 @@ function renderCarga(){
   `;
 
   const confirmBtn = el.querySelector('#confirmBtn');
-
-  // readout box content
   const readoutBox = el.querySelector('#readoutBox');
+
   if(!state.manualMode){
     readoutBox.innerHTML = `
       <div class="readout-main">
@@ -843,7 +857,6 @@ function renderCarga(){
     const computedNote = document.createElement('div');
     computedNote.className='manual-computed';
     computedNote.innerHTML = computed!=null ? `ρₐ calculada: <b>${computed.toFixed(2)} Ω·m</b>` : `ρₐ calculada: <b>—</b>`;
-    // append below via panel restructure: put note under readout row
     el.querySelector('.panel').insertBefore(computedNote, el.querySelector('.nav-row'));
 
     const iInputEl = readoutBox.querySelector('#iInput');
@@ -860,7 +873,6 @@ function renderCarga(){
     dvInputEl.oninput = recomputeManual;
   }
 
-  // toggle manual
   el.querySelector('#toggleManual').onclick = ()=>{
     state.manualMode = !state.manualMode;
     render();
@@ -871,56 +883,21 @@ function renderCarga(){
     render();
   };
 
-  // confirm
   el.querySelector('#confirmBtn').onclick = ()=>{ confirmCurrentStep(); };
-
-  // nav
   el.querySelector('#prevStep').onclick = ()=>{ sev.stepIndex = Math.max(0, sev.stepIndex-1); syncFormFromCurrentStep(); persist(sev); render(); };
   el.querySelector('#nextStep').onclick = ()=>{ sev.stepIndex = Math.min(STEPS.length-1, sev.stepIndex+1); syncFormFromCurrentStep(); persist(sev); render(); };
 
-  // drawer
   const drawer = el.querySelector('#drawer');
   const backdrop = el.querySelector('#backdrop');
   drawer.appendChild(renderDrawerContent(sev));
   if(state.drawerOpen){ drawer.classList.add('open'); backdrop.classList.add('open'); }
   el.querySelector('#openDrawer').onclick = ()=>{ state.drawerOpen=true; render(); };
-  el.querySelector('#spliceToggle').onclick = ()=>{ state.spliceMode = !state.spliceMode; render(); };
   backdrop.onclick = ()=>{ state.drawerOpen=false; render(); };
 
-  // chart
   const chartData = getChartSeries();
   el.querySelector('#chartHolder').appendChild(buildChartSvg(chartData, {ab2:step.ab2, mn2:step.mn2}));
 
   return el;
-}
-
-function updateConfirmState(){
-  // solo re-renderiza el botón de confirmar sin perder foco del input de texto —
-  // en este prototipo simplificamos re-renderizando completo salvo mientras se tipea.
-}
-
-// Técnica clásica de empalme: en los puntos donde hay dos lecturas (mismo AB/2,
-// distinto MN), se calcula la razón entre ambas y se desplaza verticalmente
-// todo el tramo siguiente para que la curva quede continua. No modifica los
-// datos guardados — solo afecta cómo se dibuja el gráfico.
-function computeSpliceFactors(sev){
-  const order = [0.5, 5, 20];
-  const factors = { 0.5:1, 5:1, 20:1 };
-  for(let i=1; i<order.length; i++){
-    const prevMn = order[i-1], curMn = order[i];
-    const overlapAb2s = STEPS.filter(st=>st.mn2===curMn && st.splice).map(st=>st.ab2)
-      .filter(ab2 => STEPS.some(st=>st.ab2===ab2 && st.mn2===prevMn));
-    const ratios = [];
-    overlapAb2s.forEach(ab2=>{
-      const prevLec = sev.lecturas[lecturaKey(ab2, prevMn)];
-      const curLec = sev.lecturas[lecturaKey(ab2, curMn)];
-      if(prevLec && curLec && curLec.resistividad>0){
-        ratios.push((prevLec.resistividad * factors[prevMn]) / curLec.resistividad);
-      }
-    });
-    factors[curMn] = ratios.length ? (ratios.reduce((a,b)=>a+b,0)/ratios.length) : factors[prevMn];
-  }
-  return factors;
 }
 
 function getChartSeries(){
@@ -929,12 +906,9 @@ function getChartSeries(){
   ids.forEach((id,i)=>{
     const sev = state.sevs.find(s=>s.id===id);
     if(!sev) return;
-    const factors = state.spliceMode ? computeSpliceFactors(sev) : null;
     const points = STEPS.map(st=>{
       const lec = sev.lecturas[lecturaKey(st.ab2, st.mn2)];
-      if(!lec) return null;
-      const rho = factors ? lec.resistividad * factors[st.mn2] : lec.resistividad;
-      return {ab2:st.ab2, mn2:st.mn2, rho};
+      return lec ? {ab2:st.ab2, mn2:st.mn2, rho:lec.resistividad} : null;
     }).filter(Boolean);
     series.push({ id, nombre: sev.nombre, points, dim: i>0 });
   });
@@ -965,7 +939,6 @@ function confirmCurrentStep(){
   render();
 }
 
-/* ---------- Drawer content ---------- */
 function renderDrawerContent(sev){
   const wrap = document.createElement('div');
   wrap.style.display='contents';
@@ -1033,16 +1006,15 @@ function exportJson(sev){
   downloadBlob(JSON.stringify(sev, null, 2), 'application/json', `${sev.fechaISO||'sf'}_${sev.nombre}.json`);
 }
 
-/* ===================== CHART (SVG log-log estilo papel bilog) ===================== */
+/* ===================== CHART (SVG) ===================== */
 function buildChartSvg(series, currentPoint){
   const W = 800, H = 620;
   const marginL = 56, marginR = 18, marginT = 14, marginB = 34;
   const plotW = W - marginL - marginR;
   const plotH = H - marginT - marginB;
 
-  const xMinDec = 0;   // 10^0 = 1
-  const xMaxDec = 3;   // 10^3 = 1000
-  // rango Y dinámico según datos, con piso 1 - 10^3 por defecto
+  const xMinDec = 0;   
+  const xMaxDec = 3;   
   let allRho = [];
   series.forEach(s=> s.points.forEach(p=> allRho.push(p.rho)));
   let yMinDec = 0, yMaxDec = 3;
@@ -1059,10 +1031,8 @@ function buildChartSvg(series, currentPoint){
   const pal = chartPalette();
   let svg = `<svg viewBox="0 0 ${W} ${H}" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg" style="display:block;">`;
 
-  // fondo panel
   svg += `<rect x="0" y="0" width="${W}" height="${H}" fill="none"/>`;
 
-  // grid log-log estilo papel bilogarítmico: líneas menores en 2..9, mayores en potencias de 10
   for(let dec=xMinDec; dec<=xMaxDec; dec++){
     for(let m=1; m<=9; m++){
       const val = m*Math.pow(10,dec);
@@ -1088,16 +1058,13 @@ function buildChartSvg(series, currentPoint){
       }
     }
   }
-  // ejes
   svg += `<line x1="${marginL}" y1="${marginT}" x2="${marginL}" y2="${marginT+plotH}" stroke="${pal.axisLine}" stroke-width="1.5"/>`;
   svg += `<line x1="${marginL}" y1="${marginT+plotH}" x2="${marginL+plotW}" y2="${marginT+plotH}" stroke="${pal.axisLine}" stroke-width="1.5"/>`;
   svg += `<text x="${marginL+plotW/2}" y="${H-1}" fill="${pal.dimText}" font-size="11" font-weight="600" font-family="JetBrains Mono, monospace" text-anchor="middle">AB/2 (m)</text>`;
 
-  // series
   const colors = mnColors();
   series.forEach((s)=>{
     if(s.points.length===0) return;
-    // separar en segmentos por mn2 solo para mantener el color/forma correcto
     const sorted = [...s.points].sort((a,b)=>a.ab2-b.ab2);
     const byMn = {};
     sorted.forEach(p=>{ (byMn[p.mn2] = byMn[p.mn2]||[]).push(p); });
@@ -1115,7 +1082,6 @@ function buildChartSvg(series, currentPoint){
     }
   });
 
-  // punto actual (paso activo) resaltado si aún no tiene valor
   if(currentPoint){
     const x = xPix(currentPoint.ab2);
     svg += `<line x1="${x}" y1="${marginT}" x2="${x}" y2="${marginT+plotH}" stroke="${state.theme==='field'?'#7A1E06':'#FFB238'}" stroke-width="1.5" stroke-dasharray="4 4" opacity="0.7"/>`;
@@ -1130,12 +1096,10 @@ function buildChartSvg(series, currentPoint){
 
 /* ===================== INIT ===================== */
 if('serviceWorker' in navigator){
-  // Si el archivo se abre como file:// (doble clic, sin hostear) esto falla
-  // silenciosamente y la app igual funciona, solo sin caché de service worker.
   navigator.serviceWorker.register('./service-worker.js').catch(()=>{});
 }
 async function init(){
-  render(); // primer pintado inmediato (mientras se abre la base local)
+  render();
   try{
     const saved = await dbGetAll();
     state.sevs = saved.sort((a,b)=> (a.createdAt||0)-(b.createdAt||0));
