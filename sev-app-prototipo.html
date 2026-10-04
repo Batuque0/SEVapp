@@ -506,12 +506,12 @@ function sevProgress(sev){
   return {done, total, pct: Math.round(done/total*100)};
 }
 
-/* ===================== GPS REAL (HTML5) ===================== */
+/* ===================== GPS REAL CON LOCALIDAD ===================== */
 function getRealGps() {
   return new Promise((resolve) => {
     if (!navigator.geolocation) {
       alert("La geolocalización no está soportada por tu navegador.");
-      return resolve({ lat: -31.5375, lon: -68.5364, prec: 99, ts: Date.now() });
+      return resolve({ lat: -31.5375, lon: -68.5364, prec: 99, localidad: "Desconocida", ts: Date.now() });
     }
 
     const opciones = {
@@ -521,23 +521,44 @@ function getRealGps() {
     };
 
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
+      async (pos) => {
+        const lat = pos.coords.latitude;
+        const lon = pos.coords.longitude;
+        let localidad = "Sin datos de red";
+
+        // Consulta liviana a OpenStreetMap para obtener localidad/provincia
+        try {
+          const response = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=10`
+          );
+          if (response.ok) {
+            const data = await response.json();
+            const addr = data.address || {};
+            // Busca la ciudad, pueblo o departamento y la provincia
+            const ciudad = addr.city || addr.town || addr.village || addr.county || "";
+            const provincia = addr.state || "";
+            localidad = [ciudad, provincia].filter(Boolean).join(", ") || "Ubicación detectada";
+          }
+        } catch (e) {
+          console.warn("No hay conexión a internet para resolver el nombre del lugar:", e);
+        }
+
         resolve({
-          lat: pos.coords.latitude,
-          lon: pos.coords.longitude,
+          lat: lat,
+          lon: lon,
           prec: Math.round(pos.coords.accuracy || 0),
+          localidad: localidad,
           ts: pos.timestamp || Date.now()
         });
       },
       (err) => {
-        alert("No se pudo obtener ubicación GPS (" + err.message + "). Verificá los permisos de ubicación.");
-        resolve({ lat: -31.5375, lon: -68.5364, prec: 99, ts: Date.now() });
+        alert("No se pudo obtener ubicación GPS (" + err.message + ").");
+        resolve({ lat: -31.5375, lon: -68.5364, prec: 99, localidad: "Sin señal GPS", ts: Date.now() });
       },
       opciones
     );
   });
 }
-
 /* ===================== RENDER ROOT ===================== */
 function render(){
   const app = document.getElementById('app');
@@ -695,6 +716,7 @@ function renderNew(){
             <div class="gps-icon">📍</div>
             <div>
               <div class="gps-coords">${fmtCoord(d.gps.lat)}, ${fmtCoord(d.gps.lon)}</div>
+              <div class="gps-precision">📍 ${d.gps.localidad || 'Buscando lugar...'}</div>
               <div class="gps-precision">± ${d.gps.prec} m · capturado ${arDisplayTime(new Date(d.gps.ts))}</div>
             </div>
           </div>
