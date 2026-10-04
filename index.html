@@ -9,7 +9,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="SEVApp">
+<meta name="apple-mobile-web-app-title" content="SEV Campo">
 <link rel="apple-touch-icon" href="./icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -581,6 +581,25 @@ function sevProgress(sev){
 }
 
 /* ===================== GPS REAL SIN CACHÉ (iOS Fix) ===================== */
+async function resolverLocalidad(lat, lon){
+  let localidad = "Sin datos de red";
+  try {
+    const response = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=10`
+    );
+    if (response.ok) {
+      const data = await response.json();
+      const addr = data.address || {};
+      const ciudad = addr.city || addr.town || addr.village || addr.county || "";
+      const provincia = addr.state || "";
+      localidad = [ciudad, provincia].filter(Boolean).join(", ") || "Ubicación detectada";
+    }
+  } catch (e) {
+    console.warn("No hay conexión a internet para resolver el nombre del lugar:", e);
+  }
+  return localidad;
+}
+
 function getRealGps() {
   return new Promise((resolve) => {
     if (!navigator.geolocation) {
@@ -588,63 +607,61 @@ function getRealGps() {
       return resolve({ lat: -31.5375, lon: -68.5364, prec: 99, localidad: "Desconocida", ts: Date.now() });
     }
 
-    const opciones = {
-      enableHighAccuracy: true,
-      timeout: 12000,
-      maximumAge: 0
-    };
+    const opciones = { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 };
+    const PRECISION_ACEPTABLE = 15; // metros — si llega algo así de bueno, no esperamos más
+    const VENTANA_MS = 6000; // tiempo que dejamos "madurar" la lectura del GPS
 
     let watchId = null;
+    let mejor = null; // la lectura de mejor precisión vista hasta ahora
+    let resuelto = false;
 
-    // Timer de seguridad por si el GPS tarda demasiado
-    const timer = setTimeout(() => {
+    const limpiar = () => {
       if (watchId !== null) navigator.geolocation.clearWatch(watchId);
-      alert("Tiempo de espera GPS agotado. Reintentá en un lugar a cielo abierto.");
-      resolve({ lat: -31.5375, lon: -68.5364, prec: 99, localidad: "Sin señal GPS", ts: Date.now() });
-    }, 13000);
+      clearTimeout(ventanaTimer);
+      clearTimeout(timeoutDuro);
+    };
 
-    // watchPosition fuerza al chip de iOS a encenderse y buscar satélites activos
+    const finalizar = async () => {
+      if (resuelto) return;
+      resuelto = true;
+      limpiar();
+      if (mejor) {
+        const localidad = await resolverLocalidad(mejor.lat, mejor.lon);
+        resolve({ ...mejor, localidad, ts: Date.now() });
+      } else {
+        alert("Tiempo de espera GPS agotado. Reintentá en un lugar a cielo abierto.");
+        resolve({ lat: -31.5375, lon: -68.5364, prec: 99, localidad: "Sin señal GPS", ts: Date.now() });
+      }
+    };
+
+    // watchPosition fuerza al chip de iOS a encenderse y buscar satélites activos.
+    // En iOS, la PRIMERA lectura que llega suele ser de baja precisión (o cacheada);
+    // por eso no nos quedamos con la primera sino que esperamos a ver si llega algo
+    // mejor dentro de la ventana, y usamos la de mayor precisión vista.
     watchId = navigator.geolocation.watchPosition(
-      async (pos) => {
-        // Una vez que obtenemos la medición activa, cancelamos el rastreo continuo
-        navigator.geolocation.clearWatch(watchId);
-        clearTimeout(timer);
-
-        const lat = pos.coords.latitude;
-        const lon = pos.coords.longitude;
-        let localidad = "Sin datos de red";
-
-        try {
-          const response = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=10`
-          );
-          if (response.ok) {
-            const data = await response.json();
-            const addr = data.address || {};
-            const ciudad = addr.city || addr.town || addr.village || addr.county || "";
-            const provincia = addr.state || "";
-            localidad = [ciudad, provincia].filter(Boolean).join(", ") || "Ubicación detectada";
-          }
-        } catch (e) {
-          console.warn("No hay conexión a internet para resolver el nombre del lugar:", e);
-        }
-
-        resolve({
-          lat: lat,
-          lon: lon,
-          prec: Math.round(pos.coords.accuracy || 0),
-          localidad: localidad,
-          ts: Date.now() // Timestamp fresco de la medición
-        });
+      (pos) => {
+        const candidata = {
+          lat: pos.coords.latitude,
+          lon: pos.coords.longitude,
+          prec: Math.round(pos.coords.accuracy || 9999)
+        };
+        if (!mejor || candidata.prec < mejor.prec) mejor = candidata;
+        if (mejor.prec <= PRECISION_ACEPTABLE) finalizar();
       },
       (err) => {
-        navigator.geolocation.clearWatch(watchId);
-        clearTimeout(timer);
+        if (resuelto) return;
+        resuelto = true;
+        limpiar();
         alert("Error de GPS (" + err.message + "). Verificá la localización en Ajustes.");
         resolve({ lat: -31.5375, lon: -68.5364, prec: 99, localidad: "Sin señal GPS", ts: Date.now() });
       },
       opciones
     );
+
+    // si nunca llega nada "lo bastante bueno", usamos lo mejor que hayamos visto
+    const ventanaTimer = setTimeout(finalizar, VENTANA_MS);
+    // salvaguarda final por si el navegador no llama ni éxito ni error
+    const timeoutDuro = setTimeout(finalizar, opciones.timeout + 2000);
   });
 }
 /* ===================== RENDER ROOT ===================== */
@@ -662,11 +679,6 @@ function render(){
 function renderHome(){
   const el = document.createElement('div');
   el.className = 'screen home';
-  
-  // SVG vectoriales ultra livianos
-  const iconDownload = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px; margin-right:6px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`;
-  const iconUpload = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px; margin-right:6px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`;
-
   el.innerHTML = `
     <div class="home-brand">
       <div class="mark">SEV · SCHLUMBERGER</div>
@@ -682,8 +694,8 @@ function renderHome(){
         <div>Continuar SEV<small>${state.sevs.length} guardado${state.sevs.length===1?'':'s'} en este dispositivo</small></div>
         <span class="chev">›</span>
       </button>
-      ${state.sevs.length>0 ? `<button class="btn-ghost" id="btnExportAll" style="margin-top:6px;">${iconDownload}Exportar backup completo (.zip)</button>` : ''}
-      <button class="btn-ghost" id="btnImportAll" style="margin-top:6px;">${iconUpload}Importar backup (.zip)</button>
+      ${state.sevs.length>0 ? `<button class="btn-ghost" id="btnExportAll" style="margin-top:6px;">⭳ Exportar backup completo (.zip)</button>` : ''}
+      <button class="btn-ghost" id="btnImportAll" style="margin-top:6px;">⭱ Importar backup (.zip)</button>
       <input type="file" id="importFileInput" accept=".zip" style="display:none;">
     </div>
     <div class="home-footer">ARES II · MODO CAMPO</div>
