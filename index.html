@@ -730,11 +730,22 @@ function renderNew(){
   `;
   el.querySelector('#back').onclick = ()=>{ state.newSevDraft=null; state.screen='home'; render(); };
   el.querySelector('#nameInput').oninput = (e)=>{ d.nombre = e.target.value; };
-  el.querySelector('#remedir').onclick = async ()=>{
-    const remedicion = await getRealGps();
-    d.gps = remedicion;
-    d.historialGps.push(remedicion);
-    render();
+const remedirBtn = el.querySelector('#remedir');
+  remedirBtn.onclick = async () => {
+    try {
+      remedirBtn.disabled = true;
+      remedirBtn.innerText = "⏳ Obteniendo GPS...";
+      
+      const remedicion = await getRealGps();
+      
+      d.gps = remedicion;
+      d.historialGps.push(remedicion);
+    } catch (error) {
+      console.error("Error al re-medir GPS:", error);
+      alert("No se pudo actualizar la ubicación.");
+    } finally {
+      render();
+    }
   };
   el.querySelector('#empezar').onclick = ()=>{
     state.sevs.push(d);
