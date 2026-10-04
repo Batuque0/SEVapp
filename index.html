@@ -600,7 +600,13 @@ async function resolverLocalidad(lat, lon){
   return localidad;
 }
 
-function getRealGps() {
+// previousTs: timestamp REAL (pos.timestamp) de la medición anterior, si la hay.
+// Cuando se pasa, cualquier lectura que no sea genuinamente más nueva que esa
+// se descarta activamente — en vez de aceptar a ciegas lo primero que iOS
+// entregue, que puede ser la posición vieja cacheada.
+// Devuelve null si, pasada la ventana de espera, nunca llegó una lectura fresca
+// (en vez de devolver silenciosamente la vieja como si fuera nueva).
+function getRealGps(previousTs) {
   return new Promise((resolve) => {
     if (!navigator.geolocation) {
       alert("La geolocalización no está soportada por tu navegador.");
@@ -609,10 +615,12 @@ function getRealGps() {
 
     const opciones = { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 };
     const PRECISION_ACEPTABLE = 15; // metros — si llega algo así de bueno, no esperamos más
-    const VENTANA_MS = 6000; // tiempo que dejamos "madurar" la lectura del GPS
+    const VENTANA_MS = 8000; // tiempo que dejamos "madurar" la lectura del GPS
+    const MARGEN_FRESCURA_MS = 2000; // cuánto más nueva (en tiempo real de GPS) tiene que ser que la anterior
 
     let watchId = null;
-    let mejor = null; // la lectura de mejor precisión vista hasta ahora
+    let mejor = null;            // mejor lectura FRESCA vista hasta ahora
+    let soloLlegaronViejas = false; // si todo lo que llegó fue la misma posición repetida
     let resuelto = false;
 
     const limpiar = () => {
@@ -627,23 +635,28 @@ function getRealGps() {
       limpiar();
       if (mejor) {
         const localidad = await resolverLocalidad(mejor.lat, mejor.lon);
-        resolve({ ...mejor, localidad, ts: Date.now() });
+        resolve({ ...mejor, localidad });
+      } else if (soloLlegaronViejas) {
+        alert("iOS sigue devolviendo la posición anterior cacheada, no una nueva. Probá cerrar del todo la pestaña/app y volver a abrirla, o esperar unos segundos más antes de reintentar.");
+        resolve(null);
       } else {
         alert("Tiempo de espera GPS agotado. Reintentá en un lugar a cielo abierto.");
-        resolve({ lat: -31.5375, lon: -68.5364, prec: 99, localidad: "Sin señal GPS", ts: Date.now() });
+        resolve(previousTs ? null : { lat: -31.5375, lon: -68.5364, prec: 99, localidad: "Sin señal GPS", ts: Date.now() });
       }
     };
 
     // watchPosition fuerza al chip de iOS a encenderse y buscar satélites activos.
-    // En iOS, la PRIMERA lectura que llega suele ser de baja precisión (o cacheada);
-    // por eso no nos quedamos con la primera sino que esperamos a ver si llega algo
-    // mejor dentro de la ventana, y usamos la de mayor precisión vista.
+    // Además de esperar buena precisión, exigimos que el timestamp del propio GPS
+    // (no el de nuestro reloj) sea más nuevo que la medición anterior.
     watchId = navigator.geolocation.watchPosition(
       (pos) => {
+        const esFresca = !previousTs || (pos.timestamp - previousTs) > MARGEN_FRESCURA_MS;
+        if (!esFresca) { soloLlegaronViejas = true; return; }
         const candidata = {
           lat: pos.coords.latitude,
           lon: pos.coords.longitude,
-          prec: Math.round(pos.coords.accuracy || 9999)
+          prec: Math.round(pos.coords.accuracy || 9999),
+          ts: pos.timestamp
         };
         if (!mejor || candidata.prec < mejor.prec) mejor = candidata;
         if (mejor.prec <= PRECISION_ACEPTABLE) finalizar();
@@ -658,9 +671,7 @@ function getRealGps() {
       opciones
     );
 
-    // si nunca llega nada "lo bastante bueno", usamos lo mejor que hayamos visto
     const ventanaTimer = setTimeout(finalizar, VENTANA_MS);
-    // salvaguarda final por si el navegador no llama ni éxito ni error
     const timeoutDuro = setTimeout(finalizar, opciones.timeout + 2000);
   });
 }
@@ -846,10 +857,13 @@ const remedirBtn = el.querySelector('#remedir');
       remedirBtn.disabled = true;
       remedirBtn.innerText = "⏳ Obteniendo GPS...";
       
-      const remedicion = await getRealGps();
-      
-      d.gps = remedicion;
-      d.historialGps.push(remedicion);
+      const remedicion = await getRealGps(d.gps ? d.gps.ts : null);
+
+      if (remedicion) {
+        d.gps = remedicion;
+        d.historialGps.push(remedicion);
+      }
+      // si remedicion es null, getRealGps ya avisó por qué y dejamos la posición anterior tal cual
     } catch (error) {
       console.error("Error al re-medir GPS:", error);
       alert("No se pudo actualizar la ubicación.");
