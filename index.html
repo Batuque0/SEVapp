@@ -679,6 +679,11 @@ function render(){
 function renderHome(){
   const el = document.createElement('div');
   el.className = 'screen home';
+  
+  // SVG vectoriales ultra livianos
+  const iconDownload = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px; margin-right:6px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`;
+  const iconUpload = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px; margin-right:6px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`;
+
   el.innerHTML = `
     <div class="home-brand">
       <div class="mark">SEV · SCHLUMBERGER</div>
@@ -694,8 +699,8 @@ function renderHome(){
         <div>Continuar SEV<small>${state.sevs.length} guardado${state.sevs.length===1?'':'s'} en este dispositivo</small></div>
         <span class="chev">›</span>
       </button>
-      ${state.sevs.length>0 ? `<button class="btn-ghost" id="btnExportAll" style="margin-top:6px;">⭳ Exportar backup completo (.zip)</button>` : ''}
-      <button class="btn-ghost" id="btnImportAll" style="margin-top:6px;">⭱ Importar backup (.zip)</button>
+      ${state.sevs.length>0 ? `<button class="btn-ghost" id="btnExportAll" style="margin-top:6px;">${iconDownload}Exportar backup completo (.zip)</button>` : ''}
+      <button class="btn-ghost" id="btnImportAll" style="margin-top:6px;">${iconUpload}Importar backup (.zip)</button>
       <input type="file" id="importFileInput" accept=".zip" style="display:none;">
     </div>
     <div class="home-footer">ARES II · MODO CAMPO</div>
