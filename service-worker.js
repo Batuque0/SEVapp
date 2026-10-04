@@ -2,7 +2,7 @@
 // después funcione sin internet. Los datos cargados (los SEV) NO viven acá:
 // eso está en IndexedDB, que persiste solo aparte y no se toca al actualizar
 // esta lista de archivos.
-const CACHE_NAME = 'sevapp-cache-v2';
+const CACHE_NAME = 'sevapp-cache-v1';
 const ASSETS = [
   './',
   './index.html',
