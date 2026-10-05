@@ -1271,8 +1271,103 @@ function buildChartSvg(series, currentPoint){
   return holder;
 }
 
+/* ===================== LIST ===================== */
+function renderList(){
+  const el = document.createElement('div');
+  el.className = 'screen';
+  
+  el.innerHTML = `
+    <div class="topbar">
+      <div class="icon-btn" id="back">‹</div>
+      <div class="topbar-title">Sondeos guardados<small>Tocá uno para continuar · mantené para comparar</small></div>
+      <div class="sync-status-badge" id="syncBadge" title="Tocá para sincronizar con la nube">
+        <div class="dot-status"></div>
+        <span>...</span>
+      </div>
+    </div>
+    <div class="list-wrap" id="listWrap"></div>
+    <div class="list-footer" id="listFooter"></div>
+  `;
+
+  // Carga inicial del estado del badge
+  getStatusBadgeData().then(data => {
+    const badge = el.querySelector('#syncBadge');
+    if (badge) {
+      badge.className = `sync-status-badge ${data.clase}`;
+      badge.querySelector('span').innerText = data.texto;
+
+      // Evento al tocar el badge: dispara subida + descarga
+      badge.onclick = async () => {
+        if (!navigator.onLine) {
+          alert("Sin conexión a internet.");
+          return;
+        }
+        
+        badge.querySelector('span').innerText = "⏳ SYNCING...";
+        await sincronizarPendientes();
+        await descargarDeSupabase();
+        
+        const nuevoEstado = await getStatusBadgeData();
+        badge.className = `sync-status-badge ${nuevoEstado.clase}`;
+        badge.querySelector('span').innerText = nuevoEstado.texto;
+      };
+    }
+  });
+
+  const wrap = el.querySelector('#listWrap');
+  if(state.sevs.length===0){
+    wrap.innerHTML = `<div class="empty-hint">No hay sondeos todavía.<br>Tocá "Nuevo SEV" para empezar.</div>`;
+  } else {
+    state.sevs.slice().reverse().forEach(sev=>{
+      const p = sevProgress(sev);
+      const card = document.createElement('div');
+      card.className = 'sev-card' + (p.pct===100?' done':'');
+      const checked = state.overlayIds.includes(sev.id);
+      card.innerHTML = `
+        <div class="check-overlay ${checked?'on':''}" data-ov="${sev.id}">${checked?'✓':''}</div>
+        <div class="dot"></div>
+        <div class="sev-card-body">
+          <div class="name">${sev.nombre}</div>
+          <div class="meta">${sev.fecha} · ${fmtCoord(sev.gps.lat)}, ${fmtCoord(sev.gps.lon)}</div>
+        </div>
+        <div class="pct">${p.done}/${p.total}</div>
+      `;
+      card.onclick = (e)=>{
+        if(e.target.closest('[data-ov]')){
+          const id = sev.id;
+          const idx = state.overlayIds.indexOf(id);
+          if(idx>=0) state.overlayIds.splice(idx,1); else state.overlayIds.push(id);
+          render();
+          return;
+        }
+        state.currentSevId = sev.id;
+        state.screen='carga';
+        state.manualMode=false;
+        syncFormFromCurrentStep();
+        render();
+      };
+      wrap.appendChild(card);
+    });
+  }
+
+  const footer = el.querySelector('#listFooter');
+  if(state.overlayIds.length>0){
+    footer.innerHTML = `<button class="btn-block accent" id="verComp">Ver comparación (${state.overlayIds.length})</button>`;
+    footer.querySelector('#verComp').onclick = ()=>{
+      state.currentSevId = state.overlayIds[0];
+      state.screen='carga';
+      syncFormFromCurrentStep();
+      render();
+    };
+  } else {
+    footer.innerHTML = `<button class="btn-block" id="tickHint" disabled>Tildá 2-3 sondeos para superponerlos en el gráfico</button>`;
+  }
+
+  el.querySelector('#back').onclick = ()=>{ state.screen='home'; render(); };
+  return el;
+}
+
 /* ===================== SINCRONIZACIÓN SUPABASE ===================== */
-// URL limpia sin /rest/v1/
 const SUPABASE_URL = 'https://agcpowgnrvzexuojskby.supabase.co'; 
 const SUPABASE_KEY = 'sb_publishable_vQ1yrSpQSE9ttSoKE95tTw_5CxlqlKI';
 let supabaseClient = null;
@@ -1281,6 +1376,7 @@ if (window.supabase) {
   supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 }
 
+// 1. SUBIR SONDEOS PENDIENTES
 async function sincronizarPendientes() {
   if (!navigator.onLine || !supabaseClient) return;
 
@@ -1291,7 +1387,7 @@ async function sincronizarPendientes() {
     if (pendientes.length === 0) return;
 
     for (const sev of pendientes) {
-      // 1. Subir metadata del sondeo
+      // Subir metadata
       const { error: errSondeo } = await supabaseClient.from('sondeos').upsert({
         id: sev.id,
         nombre: sev.nombre,
@@ -1303,12 +1399,9 @@ async function sincronizarPendientes() {
         precision_m: sev.gps.prec
       });
 
-      if (errSondeo) {
-        console.error("Error al subir sondeo:", errSondeo);
-        throw errSondeo;
-      }
+      if (errSondeo) throw errSondeo;
 
-      // 2. Subir lecturas Schlumberger
+      // Subir lecturas
       const lecturasArray = Object.values(sev.lecturas).map(l => ({
         sondeo_id: sev.id,
         ab2: l.ab2,
@@ -1322,29 +1415,94 @@ async function sincronizarPendientes() {
 
       if (lecturasArray.length > 0) {
         const { error: errLec } = await supabaseClient.from('lecturas').upsert(lecturasArray);
-        if (errLec) {
-          console.error("Error al subir lecturas:", errLec);
-          throw errLec;
-        }
+        if (errLec) throw errLec;
       }
 
-      // 3. Marcar como sincronizado localmente
       sev.sincronizado = true;
       await dbPut(sev);
-      console.log(`SEV ${sev.nombre} sincronizado exitosamente con Supabase.`);
-    }
-
-    // Refrescar el estado en pantalla si estamos en la lista de sondeos
-    if (state.screen === 'list') {
-      renderList();
+      console.log(`SEV ${sev.nombre} subido a Supabase.`);
     }
   } catch (e) {
-    console.warn("Error en la sincronización con la nube:", e);
+    console.warn("Error al subir a la nube:", e);
   }
 }
 
-// Escuchar cuando el celular recupera internet
-window.addEventListener('online', sincronizarPendientes);
+// 2. DESCARGAR SONDEOS FALTANTES DE LA NUBE
+async function descargarDeSupabase() {
+  if (!navigator.onLine || !supabaseClient) return;
+
+  try {
+    // Traer todos los sondeos
+    const { data: sondeosCloud, error: errS } = await supabaseClient.from('sondeos').select('*');
+    if (errS || !sondeosCloud) return;
+
+    // Traer todas las lecturas
+    const { data: lecturasCloud, error: errL } = await supabaseClient.from('lecturas').select('*');
+    if (errL) return;
+
+    const locales = await dbGetAll();
+    let huboCambios = false;
+
+    for (const sCloud of sondeosCloud) {
+      const existeLocal = locales.find(l => l.id === sCloud.id);
+
+      // Si no existe localmente, lo construimos y lo guardamos en IndexedDB
+      if (!existeLocal) {
+        const lecturasSondeo = (lecturasCloud || []).filter(l => l.sondeo_id === sCloud.id);
+        const mapLecturas = {};
+
+        lecturasSondeo.forEach(l => {
+          const key = `${l.ab2}_${l.mn2}`;
+          mapLecturas[key] = {
+            ab2: Number(l.ab2),
+            mn2: Number(l.mn2),
+            resistividad: Number(l.resistividad),
+            I: l.corriente_ma ? Number(l.corriente_ma) : null,
+            dV: l.deltav_mv ? Number(l.deltav_mv) : null,
+            modo: l.modo || 'directo',
+            ts: l.timestamp ? new Date(l.timestamp).getTime() : Date.now()
+          };
+        });
+
+        const nuevoSev = {
+          id: sCloud.id,
+          nombre: sCloud.nombre,
+          fecha: sCloud.fecha,
+          fechaISO: sCloud.fecha_iso,
+          createdAt: sCloud.created_at ? new Date(sCloud.created_at).getTime() : Date.now(),
+          gps: {
+            lat: Number(sCloud.latitud),
+            lon: Number(sCloud.longitud),
+            prec: Number(sCloud.precision_m || 0),
+            localidad: sCloud.localidad || '',
+            ts: Date.now()
+          },
+          historialGps: [],
+          lecturas: mapLecturas,
+          stepIndex: Math.max(0, Object.keys(mapLecturas).length - 1),
+          sincronizado: true // Ya viene de la nube
+        };
+
+        await dbPut(nuevoSev);
+        huboCambios = true;
+      }
+    }
+
+    if (huboCambios) {
+      // Recargar lista en memoria y refrescar la pantalla
+      state.sevs = (await dbGetAll()).sort((a,b)=> (a.createdAt||0)-(b.createdAt||0));
+      if (state.screen === 'list') renderList();
+    }
+  } catch (e) {
+    console.warn("Error al descargar de la nube:", e);
+  }
+}
+
+// Escuchar evento de conexión a internet
+window.addEventListener('online', async () => {
+  await sincronizarPendientes();
+  await descargarDeSupabase();
+});
 
 async function getStatusBadgeData() {
   const isOnline = navigator.onLine;
@@ -1361,6 +1519,7 @@ async function getStatusBadgeData() {
 
   return { clase: 'online', texto: 'SYNC' };
 }
+
 /* ===================== INIT ===================== */
 if('serviceWorker' in navigator){
   navigator.serviceWorker.register('./service-worker.js').catch(()=>{});
@@ -1370,8 +1529,9 @@ async function init(){
   try{
     const saved = await dbGetAll();
     state.sevs = saved.sort((a,b)=> (a.createdAt||0)-(b.createdAt||0));
-    // Intentar sincronizar al abrir la app si ya hay internet
-    sincronizarPendientes();
+    
+    // Al abrir la app, sincroniza bidireccionalmente (sube + descarga)
+    sincronizarPendientes().then(() => descargarDeSupabase());
   }catch(e){
     console.error('No se pudieron leer los sondeos guardados', e);
   }
