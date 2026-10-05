@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-supabase-js@2"></script>
 <title>SEV Campo</title>
 <link rel="manifest" href="./manifest.json">
 <meta name="theme-color" content="#12181B">
@@ -141,6 +142,28 @@
   .nav-btn{ flex:1; padding:10px; border-radius:8px; border:1px solid var(--line); background:transparent; color:var(--text-secondary); font-family:'JetBrains Mono',monospace; font-size:12px; cursor:pointer; font-weight:600;}
   .nav-btn:disabled{ opacity:0.3; }
   .splice-flag{ display:inline-block; margin-left:8px; font-size:9px; padding:2px 6px; border-radius:4px; background:var(--amber-dim); color:var(--amber); letter-spacing:0.5px; font-family:'JetBrains Mono',monospace; vertical-align:middle;}
+  /* Indicador de Estado de Red / Sincronización */
+  .sync-status-badge {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.5px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: var(--bg-panel-2);
+    border: 1px solid var(--line);
+  }
+  .sync-status-badge .dot-status {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--text-dim);
+  }
+  .sync-status-badge.online .dot-status { background: var(--green); }
+  .sync-status-badge.pending .dot-status { background: var(--amber); }
+  .sync-status-badge.offline .dot-status { background: var(--orange); }
 
   /* ---------- DRAWER ---------- */
   .drawer-backdrop{ position:absolute; inset:0; background:rgba(0,0,0,0.5); z-index:10; opacity:0; pointer-events:none; transition:opacity .2s;}
@@ -734,14 +757,30 @@ function renderHome(){
 function renderList(){
   const el = document.createElement('div');
   el.className = 'screen';
+  
+  // Renderizamos la estructura base de la topbar con un badge temporal "..."
   el.innerHTML = `
     <div class="topbar">
       <div class="icon-btn" id="back">‹</div>
       <div class="topbar-title">Sondeos guardados<small>Tocá uno para continuar · mantené para comparar</small></div>
+      <div class="sync-status-badge" id="syncBadge">
+        <div class="dot-status"></div>
+        <span>...</span>
+      </div>
     </div>
     <div class="list-wrap" id="listWrap"></div>
     <div class="list-footer" id="listFooter"></div>
   `;
+
+  // Actualizamos el estado del badge de forma asíncrona sin congelar el render
+  getStatusBadgeData().then(data => {
+    const badge = el.querySelector('#syncBadge');
+    if (badge) {
+      badge.className = `sync-status-badge ${data.clase}`;
+      badge.querySelector('span').innerText = data.texto;
+    }
+  });
+
   const wrap = el.querySelector('#listWrap');
   if(state.sevs.length===0){
     wrap.innerHTML = `<div class="empty-hint">No hay sondeos todavía.<br>Tocá "Nuevo SEV" para empezar.</div>`;
@@ -777,6 +816,7 @@ function renderList(){
       wrap.appendChild(card);
     });
   }
+
   const footer = el.querySelector('#listFooter');
   if(state.overlayIds.length>0){
     footer.innerHTML = `<button class="btn-block accent" id="verComp">Ver comparación (${state.overlayIds.length})</button>`;
@@ -789,6 +829,7 @@ function renderList(){
   } else {
     footer.innerHTML = `<button class="btn-block" id="tickHint" disabled>Tildá 2-3 sondeos para superponerlos en el gráfico</button>`;
   }
+
   el.querySelector('#back').onclick = ()=>{ state.screen='home'; render(); };
   return el;
 }
@@ -810,7 +851,8 @@ async function startNewSev(){
     fechaISO: arDateISO(now),
     createdAt: now.getTime(),
     lecturas: {},
-    stepIndex: 0
+    stepIndex: 0,
+    sincronizado: false // Marca para saber si ya subió a la nube o sigue pendiente
   };
   state.screen='new';
   render();
@@ -1229,6 +1271,83 @@ function buildChartSvg(series, currentPoint){
   return holder;
 }
 
+/* ===================== SINCRONIZACIÓN SUPABASE ===================== */
+const SUPABASE_URL = 'https://agcpowgnrvzexuojskby.supabase.co/rest/v1/'; // Reemplazar con tu URL
+const SUPABASE_KEY = 'sb_publishable_vQ1yrSpQSE9ttSoKE95tTw_5CxlqlKI';                // Reemplazar con tu Key
+let supabaseClient = null;
+
+// Inicializamos el cliente si hay conexión y la librería cargó
+if (window.supabase) {
+  supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+}
+
+async function sincronizarPendientes() {
+  if (!navigator.onLine || !supabaseClient) return;
+
+  try {
+    const todos = await dbGetAll();
+    const pendientes = todos.filter(s => !s.sincronizado);
+
+    for (const sev of pendientes) {
+      // 1. Subir metadata del sondeo
+      const { error: errSondeo } = await supabaseClient.from('sondeos').upsert({
+        id: sev.id,
+        nombre: sev.nombre,
+        fecha: sev.fecha,
+        fecha_iso: sev.fechaISO,
+        latitud: sev.gps.lat,
+        longitud: sev.gps.lon,
+        localidad: sev.gps.localidad,
+        precision_m: sev.gps.prec
+      });
+
+      if (errSondeo) throw errSondeo;
+
+      // 2. Subir lecturas Schlumberger
+      const lecturasArray = Object.values(sev.lecturas).map(l => ({
+        sondeo_id: sev.id,
+        ab2: l.ab2,
+        mn2: l.mn2,
+        resistividad: l.resistividad,
+        modo: l.modo,
+        corriente_ma: l.I,
+        deltav_mv: l.dV,
+        timestamp: new Date(l.ts).toISOString()
+      }));
+
+      if (lecturasArray.length > 0) {
+        const { error: errLec } = await supabaseClient.from('lecturas').upsert(lecturasArray);
+        if (errLec) throw errLec;
+      }
+
+      // 3. Marcar como sincronizado localmente
+      sev.sincronizado = true;
+      await dbPut(sev);
+      console.log(`SEV ${sev.nombre} sincronizado con Supabase.`);
+    }
+  } catch (e) {
+    console.warn("Error en la sincronización con la nube:", e);
+  }
+}
+
+// Escuchar cuando el celular vuelve a tener internet
+window.addEventListener('online', sincronizarPendientes);
+async function getStatusBadgeData() {
+  const isOnline = navigator.onLine;
+  if (!isOnline) {
+    return { clase: 'offline', texto: 'NET: OFF' };
+  }
+
+  const todos = await dbGetAll();
+  const pendientes = todos.filter(s => !s.sincronizado);
+
+  if (pendientes.length > 0) {
+    return { clase: 'pending', texto: `PEND (${pendientes.length})` };
+  }
+
+  return { clase: 'online', texto: 'SYNC' };
+}
+
 /* ===================== INIT ===================== */
 if('serviceWorker' in navigator){
   navigator.serviceWorker.register('./service-worker.js').catch(()=>{});
@@ -1238,6 +1357,8 @@ async function init(){
   try{
     const saved = await dbGetAll();
     state.sevs = saved.sort((a,b)=> (a.createdAt||0)-(b.createdAt||0));
+    // Intentar sincronizar al abrir la app si ya hay internet
+    sincronizarPendientes();
   }catch(e){
     console.error('No se pudieron leer los sondeos guardados', e);
   }
