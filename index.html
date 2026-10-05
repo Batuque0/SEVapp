@@ -268,6 +268,37 @@ async function dbDelete(id){
   });
 }
 function persist(sev){ if(sev) dbPut(sev); }
+async function borrarSevCompleto(id) {
+  const sev = state.sevs.find(s => s.id === id);
+  if (!sev) return;
+
+  const confirmar = confirm(`¿Estás seguro de que querés borrar el sondeo "${sev.nombre}"?\nEsta acción no se puede deshacer.`);
+  if (!confirmar) return;
+
+  try {
+    // 1. Borrar de IndexedDB local
+    await dbDelete(id);
+
+    // 2. Si hay conexión y Supabase está configurado, borrar de la nube
+    if (navigator.onLine && supabaseClient) {
+      const { error } = await supabaseClient.from('sondeos').delete().eq('id', id);
+      if (error) console.error("Error al borrar en Supabase:", error);
+    }
+
+    // 3. Quitar de la lista en memoria y actualizar interfaz
+    state.sevs = state.sevs.filter(s => s.id !== id);
+    state.overlayIds = state.overlayIds.filter(ovId => ovId !== id);
+
+    if (state.currentSevId === id) {
+      state.screen = 'list';
+    }
+
+    render();
+  } catch (err) {
+    console.error("Error al eliminar sondeo:", err);
+    alert("Ocurrió un error al intentar eliminar el sondeo.");
+  }
+}
 
 /* ===================== DATOS BASE ===================== */
 const AB2_LIST = [2,3,4,5,6,8,10,13,16,20,25,32,40,50,65,80,100,125,160,200,250,320,400,500];
@@ -800,6 +831,12 @@ function renderList(){
         <div class="pct">${p.done}/${p.total}</div>
       `;
       card.onclick = (e)=>{
+        const delBtn = e.target.closest('[data-del]');
+        if (delBtn) {
+          e.stopPropagation();
+          borrarSevCompleto(delBtn.dataset.del);
+          return;
+        }
         if(e.target.closest('[data-ov]')){
           const id = sev.id;
           const idx = state.overlayIds.indexOf(id);
@@ -1331,8 +1368,15 @@ function renderList(){
           <div class="meta">${sev.fecha} · ${fmtCoord(sev.gps.lat)}, ${fmtCoord(sev.gps.lon)}</div>
         </div>
         <div class="pct">${p.done}/${p.total}</div>
+        <button class="icon-btn" data-del="${sev.id}" style="width:32px; height:32px; border:none; background:transparent; color:var(--maroon); font-size:16px;" title="Borrar sondeo">🗑</button>
       `;
       card.onclick = (e)=>{
+        const delBtn = e.target.closest('[data-del]');
+        if (delBtn) {
+          e.stopPropagation();
+          borrarSevCompleto(delBtn.dataset.del);
+          return;
+        }
         if(e.target.closest('[data-ov]')){
           const id = sev.id;
           const idx = state.overlayIds.indexOf(id);
