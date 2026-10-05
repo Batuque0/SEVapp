@@ -1039,7 +1039,7 @@ function renderCarga(){
       <div class="topbar-title" style="text-align:center;">${sev.nombre}<small>${p.done}/${p.total} puntos cargados</small></div>
       <div style="display:flex; gap:6px;">
         <div class="icon-btn ${state.spliceMode ? 'active' : ''}" id="spliceToggle" title="${state.spliceMode ? 'Desactivar empalme visual' : 'Activar empalme visual'}">
-          🔗 <span style="font-size:9px; margin-left:2px;">${state.spliceMode ? '●' : '○'}</span>
+          🔗 <span style="font-size:9px; margin-left:2px;">${state.spliceMode}</span>
         </div>
         <div class="icon-btn" id="themeToggle" title="${state.theme==='field'?'Volver a modo oscuro':'Modo campo (alto contraste)'}">${state.theme==='field'?'🌙':'☀'}</div>
       </div>
