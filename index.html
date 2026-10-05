@@ -1272,11 +1272,11 @@ function buildChartSvg(series, currentPoint){
 }
 
 /* ===================== SINCRONIZACIÓN SUPABASE ===================== */
-const SUPABASE_URL = 'https://agcpowgnrvzexuojskby.supabase.co/rest/v1/'; // Reemplazar con tu URL
-const SUPABASE_KEY = 'sb_publishable_vQ1yrSpQSE9ttSoKE95tTw_5CxlqlKI';                // Reemplazar con tu Key
+// URL limpia sin /rest/v1/
+const SUPABASE_URL = 'https://agcpowgnrvzexuojskby.supabase.co'; 
+const SUPABASE_KEY = 'sb_publishable_vQ1yrSpQSE9ttSoKE95tTw_5CxlqlKI';
 let supabaseClient = null;
 
-// Inicializamos el cliente si hay conexión y la librería cargó
 if (window.supabase) {
   supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 }
@@ -1287,6 +1287,8 @@ async function sincronizarPendientes() {
   try {
     const todos = await dbGetAll();
     const pendientes = todos.filter(s => !s.sincronizado);
+
+    if (pendientes.length === 0) return;
 
     for (const sev of pendientes) {
       // 1. Subir metadata del sondeo
@@ -1301,7 +1303,10 @@ async function sincronizarPendientes() {
         precision_m: sev.gps.prec
       });
 
-      if (errSondeo) throw errSondeo;
+      if (errSondeo) {
+        console.error("Error al subir sondeo:", errSondeo);
+        throw errSondeo;
+      }
 
       // 2. Subir lecturas Schlumberger
       const lecturasArray = Object.values(sev.lecturas).map(l => ({
@@ -1317,21 +1322,30 @@ async function sincronizarPendientes() {
 
       if (lecturasArray.length > 0) {
         const { error: errLec } = await supabaseClient.from('lecturas').upsert(lecturasArray);
-        if (errLec) throw errLec;
+        if (errLec) {
+          console.error("Error al subir lecturas:", errLec);
+          throw errLec;
+        }
       }
 
       // 3. Marcar como sincronizado localmente
       sev.sincronizado = true;
       await dbPut(sev);
-      console.log(`SEV ${sev.nombre} sincronizado con Supabase.`);
+      console.log(`SEV ${sev.nombre} sincronizado exitosamente con Supabase.`);
+    }
+
+    // Refrescar el estado en pantalla si estamos en la lista de sondeos
+    if (state.screen === 'list') {
+      renderList();
     }
   } catch (e) {
     console.warn("Error en la sincronización con la nube:", e);
   }
 }
 
-// Escuchar cuando el celular vuelve a tener internet
+// Escuchar cuando el celular recupera internet
 window.addEventListener('online', sincronizarPendientes);
+
 async function getStatusBadgeData() {
   const isOnline = navigator.onLine;
   if (!isOnline) {
@@ -1347,7 +1361,6 @@ async function getStatusBadgeData() {
 
   return { clase: 'online', texto: 'SYNC' };
 }
-
 /* ===================== INIT ===================== */
 if('serviceWorker' in navigator){
   navigator.serviceWorker.register('./service-worker.js').catch(()=>{});
