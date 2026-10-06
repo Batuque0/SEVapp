@@ -68,7 +68,7 @@
   /* ---------- LIST ---------- */
   .topbar{ height:56px; min-height:56px; display:flex; align-items:center; gap:10px; padding:0 14px; border-bottom:1px solid var(--line); background:var(--bg-panel);}
   .icon-btn{ width:38px; height:38px; border-radius:8px; border:1px solid var(--line); background:var(--bg-panel-2); color:var(--text-primary); display:flex; align-items:center; justify-content:center; cursor:pointer; font-size:15px; flex-shrink:0;}
-  .icon-btn.active{ background:var(--green-dim); border-color:var(--green); color:var(--green); }
+  .icon-btn.active{ background:var(--amber-dim); border-color:var(--amber); color:var(--amber); }
   .topbar-title{ flex:1; font-weight:600; font-size:15px; }
   .topbar-title small{ display:block; font-weight:400; font-size:11px; color:var(--text-secondary); font-family:'JetBrains Mono',monospace; margin-top:1px;}
   .list-wrap{ flex:1; overflow-y:auto; padding:14px; }
@@ -272,7 +272,14 @@ async function dbDelete(id){
     tx.onerror = ()=> reject(tx.error);
   });
 }
-function persist(sev){ if(sev) dbPut(sev); }
+
+// Marca el timestamp de actualización local y persiste
+function persist(sev){
+  if(sev){
+    sev.updatedAt = Date.now();
+    dbPut(sev);
+  }
+}
 
 /* ===================== ELIMINACIÓN COMPLETA ===================== */
 async function borrarSevCompleto(id) {
@@ -321,12 +328,10 @@ function drawMarker(shape, x, y, r, color, opacity){
   return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r}" fill="${color}" opacity="${opacity}"/>`;
 }
 
-/* Lógica pura de cálculo de factores de empalme (Splice) */
 function calcularFactoresEmpalme(sev) {
   const factores = { 0.5: 1.0, 5: 1.0, 20: 1.0 };
   if (!sev || !sev.lecturas) return factores;
 
-  // 1. Calcular factor para MN/2 = 5m en base a los solapes con MN/2 = 0.5m
   const solapes5 = [];
   STEPS.filter(st => st.mn2 === 5).forEach(st => {
     const lec05 = sev.lecturas[lecturaKey(st.ab2, 0.5)];
@@ -339,7 +344,6 @@ function calcularFactoresEmpalme(sev) {
     factores[5] = solapes5.reduce((a, b) => a + b, 0) / solapes5.length;
   }
 
-  // 2. Calcular factor para MN/2 = 20m en base a los solapes con MN/2 = 5m
   const solapes20 = [];
   STEPS.filter(st => st.mn2 === 20).forEach(st => {
     const lec5 = sev.lecturas[lecturaKey(st.ab2, 5)];
@@ -618,7 +622,7 @@ let state = {
   currentSevId: null,
   drawerOpen:false,
   manualMode:false,
-  spliceMode:false, // Estado global para el toggle de empalme
+  spliceMode:false,
   overlayIds: [],
   formValue:'',
   formI:'',
@@ -915,16 +919,16 @@ async function startNewSev(){
 
   const count = state.sevs.length+1;
   const now = new Date();
+  const nowTs = now.getTime();
   state.newSevDraft = {
     id: uid(),
     nombre: 'SEV-' + String(count).padStart(2,'0'),
     gps, historialGps:[gps],
     fecha: nowStr(),
     fechaISO: arDateISO(now),
-    createdAt: now.getTime(),
-    lecturas: {},
-    stepIndex: 0,
-    sincronizado: false
+    createdAt: nowTs,
+    updatedAt: nowTs,
+    lecturas: {}
   };
   state.screen='new';
   render();
@@ -1038,9 +1042,7 @@ function renderCarga(){
       <div class="icon-btn" id="openDrawer">☰</div>
       <div class="topbar-title" style="text-align:center;">${sev.nombre}<small>${p.done}/${p.total} puntos cargados</small></div>
       <div style="display:flex; gap:6px;">
-        <div class="icon-btn ${state.spliceMode ? 'active' : ''}" id="spliceToggle" title="${state.spliceMode ? 'Desactivar empalme' : 'Activar empalme'}">
-          🔗
-        </div>
+        <div class="icon-btn ${state.spliceMode ? 'active' : ''}" id="spliceToggle" title="${state.spliceMode ? 'Desactivar empalme' : 'Activar empalme'}">🔗</div>
         <div class="icon-btn" id="themeToggle" title="${state.theme==='field'?'Volver a modo oscuro':'Modo campo (alto contraste)'}">${state.theme==='field'?'🌙':'☀'}</div>
       </div>
     </div>
@@ -1166,7 +1168,6 @@ function getChartSeries(){
     const sev = state.sevs.find(s=>s.id===id);
     if(!sev) return;
     
-    // Obtener los factores de empalme si el modo empalme está activado
     const factores = state.spliceMode ? calcularFactoresEmpalme(sev) : { 0.5: 1.0, 5: 1.0, 20: 1.0 };
 
     const points = STEPS.map(st=>{
@@ -1366,7 +1367,7 @@ function buildChartSvg(series, currentPoint){
   return holder;
 }
 
-/* ===================== SINCRONIZACIÓN SUPABASE ===================== */
+/* ===================== SINCRONIZACIÓN SUPABASE (UPDATED_AT) ===================== */
 const SUPABASE_URL = 'https://agcpowgnrvzexuojskby.supabase.co'; 
 const SUPABASE_KEY = 'sb_publishable_vQ1yrSpQSE9ttSoKE95tTw_5CxlqlKI';
 let supabaseClient = null;
@@ -1380,43 +1381,59 @@ async function sincronizarPendientes() {
 
   try {
     const todos = await dbGetAll();
-    const pendientes = todos.filter(s => !s.sincronizado);
+    
+    // Consultar timestamps remotos de la nube
+    const { data: remotos, error: errFetch } = await supabaseClient
+      .from('sondeos')
+      .select('id, updated_at');
+      
+    if (errFetch) throw errFetch;
+    
+    const mapaRemoto = {};
+    (remotos || []).forEach(r => {
+      mapaRemoto[r.id] = r.updated_at ? new Date(r.updated_at).getTime() : 0;
+    });
 
-    if (pendientes.length === 0) return;
+    for (const sev of todos) {
+      const updatedAtLocal = sev.updatedAt || sev.createdAt || Date.now();
+      const updatedAtCloud = mapaRemoto[sev.id] || 0;
 
-    for (const sev of pendientes) {
-      const { error: errSondeo } = await supabaseClient.from('sondeos').upsert({
-        id: sev.id,
-        nombre: sev.nombre,
-        fecha: sev.fecha,
-        fecha_iso: sev.fechaISO,
-        latitud: sev.gps.lat,
-        longitud: sev.gps.lon,
-        localidad: sev.gps.localidad,
-        precision_m: sev.gps.prec
-      });
+      // Si la versión local es más reciente que la nube, actualizar en Supabase
+      if (updatedAtLocal > updatedAtCloud) {
+        const isoUpdatedAt = new Date(updatedAtLocal).toISOString();
 
-      if (errSondeo) throw errSondeo;
+        const { error: errSondeo } = await supabaseClient.from('sondeos').upsert({
+          id: sev.id,
+          nombre: sev.nombre,
+          fecha: sev.fecha,
+          fecha_iso: sev.fechaISO,
+          latitud: sev.gps.lat,
+          longitud: sev.gps.lon,
+          localidad: sev.gps.localidad,
+          precision_m: sev.gps.prec,
+          updated_at: isoUpdatedAt
+        });
 
-      const lecturasArray = Object.values(sev.lecturas).map(l => ({
-        sondeo_id: sev.id,
-        ab2: l.ab2,
-        mn2: l.mn2,
-        resistividad: l.resistividad,
-        modo: l.modo,
-        corriente_ma: l.I,
-        deltav_mv: l.dV,
-        timestamp: new Date(l.ts).toISOString()
-      }));
+        if (errSondeo) throw errSondeo;
 
-      if (lecturasArray.length > 0) {
-        const { error: errLec } = await supabaseClient.from('lecturas').upsert(lecturasArray);
-        if (errLec) throw errLec;
+        const lecturasArray = Object.values(sev.lecturas).map(l => ({
+          sondeo_id: sev.id,
+          ab2: l.ab2,
+          mn2: l.mn2,
+          resistividad: l.resistividad,
+          modo: l.modo,
+          corriente_ma: l.I,
+          deltav_mv: l.dV,
+          timestamp: new Date(l.ts).toISOString()
+        }));
+
+        if (lecturasArray.length > 0) {
+          const { error: errLec } = await supabaseClient.from('lecturas').upsert(lecturasArray, { onConflict: 'sondeo_id,ab2,mn2' });
+          if (errLec) throw errLec;
+        }
+
+        console.log(`SEV ${sev.nombre} sincronizado con la nube.`);
       }
-
-      sev.sincronizado = true;
-      await dbPut(sev);
-      console.log(`SEV ${sev.nombre} subido a Supabase.`);
     }
   } catch (e) {
     console.warn("Error al subir a la nube:", e);
@@ -1438,8 +1455,11 @@ async function descargarDeSupabase() {
 
     for (const sCloud of sondeosCloud) {
       const existeLocal = locales.find(l => l.id === sCloud.id);
+      const updatedAtCloud = sCloud.updated_at ? new Date(sCloud.updated_at).getTime() : 0;
+      const updatedAtLocal = existeLocal ? (existeLocal.updatedAt || existeLocal.createdAt || 0) : -1;
 
-      if (!existeLocal) {
+      // Si la versión de la nube es más reciente que la local
+      if (updatedAtCloud > updatedAtLocal) {
         const lecturasSondeo = (lecturasCloud || []).filter(l => l.sondeo_id === sCloud.id);
         const mapLecturas = {};
 
@@ -1456,12 +1476,13 @@ async function descargarDeSupabase() {
           };
         });
 
-        const nuevoSev = {
+        const sevActualizado = {
           id: sCloud.id,
           nombre: sCloud.nombre,
           fecha: sCloud.fecha,
           fechaISO: sCloud.fecha_iso,
           createdAt: sCloud.created_at ? new Date(sCloud.created_at).getTime() : Date.now(),
+          updatedAt: updatedAtCloud,
           gps: {
             lat: Number(sCloud.latitud),
             lon: Number(sCloud.longitud),
@@ -1471,11 +1492,10 @@ async function descargarDeSupabase() {
           },
           historialGps: [],
           lecturas: mapLecturas,
-          stepIndex: Math.max(0, Object.keys(mapLecturas).length - 1),
-          sincronizado: true
+          stepIndex: Math.max(0, Object.keys(mapLecturas).length - 1)
         };
 
-        await dbPut(nuevoSev);
+        await dbPut(sevActualizado);
         huboCambios = true;
       }
     }
@@ -1501,11 +1521,26 @@ async function getStatusBadgeData() {
   }
 
   const todos = await dbGetAll();
-  const pendientes = todos.filter(s => !s.sincronizado);
+  
+  if (!supabaseClient) return { clase: 'online', texto: 'SYNC' };
 
-  if (pendientes.length > 0) {
-    return { clase: 'pending', texto: `PEND (${pendientes.length})` };
-  }
+  try {
+    const { data: remotos } = await supabaseClient.from('sondeos').select('id, updated_at');
+    const mapaRemoto = {};
+    (remotos || []).forEach(r => {
+      mapaRemoto[r.id] = r.updated_at ? new Date(r.updated_at).getTime() : 0;
+    });
+
+    const pendientes = todos.filter(sev => {
+      const local = sev.updatedAt || sev.createdAt || 0;
+      const cloud = mapaRemoto[sev.id] || 0;
+      return local > cloud;
+    });
+
+    if (pendientes.length > 0) {
+      return { clase: 'pending', texto: `PEND (${pendientes.length})` };
+    }
+  } catch(e){}
 
   return { clase: 'online', texto: 'SYNC' };
 }
