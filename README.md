@@ -32,8 +32,10 @@ guardan en una base de datos interna del navegador (IndexedDB y en supabase)
 
 LIMITACIÓN A TENER EN CUENTA EN iOS
 -------------------------------------
-iOS es más estricto con el almacenamiento de las apps web: si la app pasa
+- iOS es más estricto con el almacenamiento de las apps web: si la app pasa
 muchos días sin abrirse, Safari podría, en algunos casos, limpiar los datos
 guardados. Por eso conviene exportar el backup .zip cada tanto (por ejemplo,
 al final de cada campaña de campo) en vez de confiar en que quede guardado
 para siempre solo adentro del celular.
+- IOS además no permite llamar dos veces seguidas a la función GPS, por lo
+que para medir el punto otra veez tenés que esperar un minutito :').
