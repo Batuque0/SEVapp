@@ -38,4 +38,4 @@ guardados. Por eso conviene exportar el backup .zip cada tanto (por ejemplo,
 al final de cada campaña de campo) en vez de confiar en que quede guardado
 para siempre solo adentro del celular.
 - IOS además no permite llamar dos veces seguidas a la función GPS, por lo
-que para medir el punto otra veez tenés que esperar un minutito :').
+que para medir el punto otra vez tenés que esperar un minutito :').
