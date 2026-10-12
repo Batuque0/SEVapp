@@ -14,10 +14,10 @@ La forma más simple:
 
 QUÉ CONTIENE EL REPOSITORIO
 -----------
-\item index.html         → la app entera (una sola página, no necesita internet para funcionar)
-manifest.json       → hace que se pueda "instalar" con ícono propio en el celular
-service-worker.js   → hace que funcione sin conexión después de la primera vez que se abre
-icons/              → íconos de la app
+- index.html         → la app entera (una sola página, no necesita internet para funcionar)
+- manifest.json       → hace que se pueda "instalar" con ícono propio en el celular
+- service-worker.js   → hace que funcione sin conexión después de la primera vez que se abre
+- icons/              → íconos de la app
 
 DÓNDE SE GUARDAN LOS DATOS DE LA APP
 ---------------------------
